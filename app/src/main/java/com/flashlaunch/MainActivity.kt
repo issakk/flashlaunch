@@ -43,7 +43,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                HomeScreen(viewModel)
+                HomeScreen(viewModel, onClose = { finish() })
             }
         }
     }

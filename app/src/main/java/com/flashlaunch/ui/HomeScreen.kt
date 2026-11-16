@@ -30,7 +30,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -71,7 +70,7 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun HomeScreen(viewModel: AppsViewModel) {
+fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
@@ -104,25 +103,13 @@ fun HomeScreen(viewModel: AppsViewModel) {
             SettingsScreen(viewModel = viewModel, onClose = { settingsOpen = false })
         } else {
             Column(Modifier.fillMaxSize()) {
-                Row(
+                QueryBar(
+                    query = state.query,
+                    onClear = { viewModel.setQuery("") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    QueryBar(
-                        query = state.query,
-                        onClear = { viewModel.setQuery("") },
-                        modifier = Modifier.weight(1f),
-                    )
-                    IconButton(onClick = { settingsOpen = true }) {
-                        Icon(
-                            imageVector = Icons.Filled.Settings,
-                            contentDescription = "设置",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                )
 
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     when {
@@ -151,10 +138,14 @@ fun HomeScreen(viewModel: AppsViewModel) {
                 }
 
                 NineKeyPad(
+                    vibrate = state.keyVibration,
+                    canOpenFirst = state.results.isNotEmpty(),
                     onDigit = { digit -> viewModel.setQuery(state.query + digit) },
                     onBackspace = { viewModel.setQuery(state.query.dropLast(1)) },
                     onClear = { viewModel.setQuery("") },
-                    vibrate = state.keyVibration,
+                    onOpenFirst = { state.results.firstOrNull()?.let(viewModel::openApp) },
+                    onSettings = { settingsOpen = true },
+                    onClose = onClose,
                 )
             }
         }
@@ -240,30 +231,42 @@ private fun QueryBar(
     }
 }
 
-private data class PadKey(val main: String, val sub: String)
+private sealed interface PadKey {
+    data class Digit(val value: String, val letters: String = "") : PadKey
+    object Settings : PadKey
+    object OpenFirst : PadKey
+    object Backspace : PadKey
+    object Clear : PadKey
+    object Close : PadKey
+}
 
-private val PAD_KEYS = listOf(
-    PadKey("1", ""), PadKey("2", "abc"), PadKey("3", "def"),
-    PadKey("4", "ghi"), PadKey("5", "jkl"), PadKey("6", "mno"),
-    PadKey("7", "pqrs"), PadKey("8", "tuv"), PadKey("9", "wxyz"),
-    PadKey("清空", ""), PadKey("0", ""), PadKey("⌫", ""),
+private val PAD_ROWS: List<List<PadKey>> = listOf(
+    listOf(PadKey.Settings, PadKey.OpenFirst, PadKey.Backspace),
+    listOf(PadKey.Digit("1"), PadKey.Digit("2", "abc"), PadKey.Digit("3", "def")),
+    listOf(PadKey.Digit("4", "ghi"), PadKey.Digit("5", "jkl"), PadKey.Digit("6", "mno")),
+    listOf(PadKey.Digit("7", "pqrs"), PadKey.Digit("8", "tuv"), PadKey.Digit("9", "wxyz")),
+    listOf(PadKey.Clear, PadKey.Digit("0"), PadKey.Close),
 )
 
-/** Simple phone-style keypad; every key appends a T9 digit. */
+/** Phone-style T9 keypad with a control row for settings / launch-first / backspace. */
 @Composable
 private fun NineKeyPad(
+    vibrate: Boolean,
+    canOpenFirst: Boolean,
     onDigit: (String) -> Unit,
     onBackspace: () -> Unit,
     onClear: () -> Unit,
-    vibrate: Boolean,
+    onOpenFirst: () -> Unit,
+    onSettings: () -> Unit,
+    onClose: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 10.dp),
+            .padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 8.dp),
     ) {
-        PAD_KEYS.chunked(3).forEachIndexed { index, row ->
-            if (index > 0) Spacer(Modifier.height(6.dp))
+        PAD_ROWS.forEachIndexed { index, row ->
+            if (index > 0) Spacer(Modifier.height(5.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -273,11 +276,15 @@ private fun NineKeyPad(
                         key = key,
                         modifier = Modifier.weight(1f),
                         vibrate = vibrate,
+                        enabled = !(key is PadKey.OpenFirst && !canOpenFirst),
                         onClick = {
-                            when (key.main) {
-                                "⌫" -> onBackspace()
-                                "清空" -> onClear()
-                                else -> onDigit(key.main)
+                            when (key) {
+                                is PadKey.Digit -> onDigit(key.value)
+                                PadKey.Backspace -> onBackspace()
+                                PadKey.Clear -> onClear()
+                                PadKey.OpenFirst -> onOpenFirst()
+                                PadKey.Settings -> onSettings()
+                                PadKey.Close -> onClose()
                             }
                         },
                     )
@@ -292,37 +299,65 @@ private fun PadButton(
     key: PadKey,
     modifier: Modifier,
     vibrate: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val view = LocalView.current
+
+    val label = when (key) {
+        is PadKey.Digit -> key.value
+        PadKey.Settings -> "⚙"
+        PadKey.OpenFirst -> "↵"
+        PadKey.Backspace -> "⌫"
+        PadKey.Clear -> "清空"
+        PadKey.Close -> "✕"
+    }
+    val sub = when (key) {
+        is PadKey.Digit -> key.letters
+        PadKey.Settings -> "设置"
+        PadKey.OpenFirst -> "打开"
+        PadKey.Backspace -> "退格"
+        PadKey.Clear -> ""
+        PadKey.Close -> "关闭"
+    }
+    val isAction = key !is PadKey.Digit
+
     Surface(
         modifier = modifier
-            .defaultMinSize(minHeight = 42.dp)
+            .defaultMinSize(minHeight = 40.dp)
             .clip(RoundedCornerShape(12.dp))
-            .clickable {
+            .clickable(enabled = enabled) {
                 if (vibrate) {
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 }
                 onClick()
             },
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        color = if (isAction) {
+            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 6.dp),
+                .padding(vertical = 5.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = key.main,
+                text = label,
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                },
             )
-            if (key.sub.isNotEmpty()) {
+            if (sub.isNotEmpty()) {
                 Text(
-                    text = key.sub,
+                    text = sub,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
