@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -56,7 +57,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -213,34 +216,46 @@ private fun NineKeyPad(
     onSettings: () -> Unit,
     onClose: () -> Unit,
 ) {
-    Column(
+    val rows = PAD_ROWS.size
+    val gap = 5.dp
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 8.dp),
     ) {
-        PAD_ROWS.forEachIndexed { index, row ->
-            if (index > 0) Spacer(Modifier.height(5.dp))
-            Row(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                row.forEach { key ->
-                    PadButton(
-                        key = key,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                        vibrate = vibrate,
-                        enabled = !(key is PadKey.OpenFirst && !canOpenFirst),
-                        onClick = {
-                            when (key) {
-                                is PadKey.Digit -> onDigit(key.value)
-                                PadKey.Backspace -> onBackspace()
-                                PadKey.Clear -> onClear()
-                                PadKey.OpenFirst -> onOpenFirst()
-                                PadKey.Settings -> onSettings()
-                                PadKey.Close -> onClose()
-                            }
-                        },
-                    )
+        // font sizes follow the actual key height, so nothing gets clipped
+        // at any keypad percentage
+        val keyHeight = ((maxHeight - gap * (rows - 1)) / rows).coerceAtLeast(18.dp)
+        val mainSize = (keyHeight.value * 0.34f).coerceIn(11f, 24f).sp
+        val subSize = (keyHeight.value * 0.22f).coerceIn(7f, 13f).sp
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            PAD_ROWS.forEachIndexed { index, row ->
+                if (index > 0) Spacer(Modifier.height(gap))
+                Row(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    row.forEach { key ->
+                        PadButton(
+                            key = key,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            vibrate = vibrate,
+                            enabled = !(key is PadKey.OpenFirst && !canOpenFirst),
+                            mainSize = mainSize,
+                            subSize = subSize,
+                            onClick = {
+                                when (key) {
+                                    is PadKey.Digit -> onDigit(key.value)
+                                    PadKey.Backspace -> onBackspace()
+                                    PadKey.Clear -> onClear()
+                                    PadKey.OpenFirst -> onOpenFirst()
+                                    PadKey.Settings -> onSettings()
+                                    PadKey.Close -> onClose()
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -253,6 +268,8 @@ private fun PadButton(
     modifier: Modifier,
     vibrate: Boolean,
     enabled: Boolean = true,
+    mainSize: TextUnit,
+    subSize: TextUnit,
     onClick: () -> Unit,
 ) {
     val view = LocalView.current
@@ -279,6 +296,7 @@ private fun PadButton(
         modifier = modifier
             .fillMaxHeight()
             .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f))
             .clickable(enabled = enabled) {
                 if (vibrate) {
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -296,7 +314,8 @@ private fun PadButton(
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.titleLarge,
+                fontSize = mainSize,
+                lineHeight = mainSize * 1.15f,
                 color = when {
                     !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     isAction -> MaterialTheme.colorScheme.primary
@@ -306,7 +325,8 @@ private fun PadButton(
             if (sub.isNotEmpty()) {
                 Text(
                     text = sub,
-                    style = MaterialTheme.typography.labelMedium,
+                    fontSize = subSize,
+                    lineHeight = subSize * 1.15f,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

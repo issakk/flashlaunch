@@ -8,6 +8,16 @@ class Prefs(context: Context) {
     private val sp = context.applicationContext
         .getSharedPreferences("flashlaunch", Context.MODE_PRIVATE)
 
+    init {
+        // v0.5.2 lowered the keypad default; move untouched installs along once
+        if (!sp.getBoolean(KEY_KEYPAD_MIGRATED, false)) {
+            if (sp.getInt(KEY_KEYPAD_PERCENT, 0) == 52) {
+                sp.edit().putInt(KEY_KEYPAD_PERCENT, DEFAULT_KEYPAD_PERCENT).apply()
+            }
+            sp.edit().putBoolean(KEY_KEYPAD_MIGRATED, true).apply()
+        }
+    }
+
     var showFrozen: Boolean
         get() = sp.getBoolean(KEY_SHOW_FROZEN, true)
         set(value) {
@@ -101,7 +111,7 @@ class Prefs(context: Context) {
         const val DEFAULT_GRID_COLUMNS = 5
         const val MIN_KEYPAD_PERCENT = 35
         const val MAX_KEYPAD_PERCENT = 80
-        const val DEFAULT_KEYPAD_PERCENT = 52
+        const val DEFAULT_KEYPAD_PERCENT = 45
         private const val KEY_HIDDEN = "hidden_apps"
         private const val KEY_SHOW_FROZEN = "show_frozen"
         private const val KEY_SHOW_HIDDEN = "show_hidden"
@@ -109,6 +119,7 @@ class Prefs(context: Context) {
         private const val KEY_KEY_VIBRATION = "key_vibration"
         private const val KEY_GRID_COLUMNS = "grid_columns"
         private const val KEY_KEYPAD_PERCENT = "keypad_percent"
+        private const val KEY_KEYPAD_MIGRATED = "keypad_percent_migrated"
         private const val KEY_SORT_BY_USAGE = "sort_by_usage"
         private const val KEY_USAGE = "launch_counts"
         private const val MAX_LAUNCH_COUNT = 9999

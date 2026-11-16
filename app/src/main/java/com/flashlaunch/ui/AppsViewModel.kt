@@ -41,7 +41,7 @@ data class UiState(
     val showHidden: Boolean = false,
     val panelHeight: Int = 60,
     val gridColumns: Int = 5,
-    val keypadPercent: Int = 52,
+    val keypadPercent: Int = 45,
     val sortByUsage: Boolean = true,
     val keyVibration: Boolean = true,
     val lastLaunchedAt: Long = 0L,
