@@ -50,6 +50,41 @@ class Prefs(context: Context) {
         sp.edit().putStringSet(KEY_HIDDEN, set).apply()
     }
 
+    /** Sort the idle grid by how often an app was launched. */
+    var sortByUsage: Boolean
+        get() = sp.getBoolean(KEY_SORT_BY_USAGE, true)
+        set(value) {
+            sp.edit().putBoolean(KEY_SORT_BY_USAGE, value).apply()
+        }
+
+    /** package -> launch count, stored as one compact `pkg=count;pkg=count` string. */
+    fun launchCounts(): Map<String, Int> {
+        val raw = sp.getString(KEY_USAGE, "") ?: ""
+        if (raw.isEmpty()) return emptyMap()
+        val out = HashMap<String, Int>()
+        for (part in raw.split(';')) {
+            if (part.isEmpty()) continue
+            val split = part.lastIndexOf('=')
+            if (split <= 0) continue
+            val count = part.substring(split + 1).toIntOrNull() ?: continue
+            out[part.substring(0, split)] = count
+        }
+        return out
+    }
+
+    fun recordLaunch(packageName: String) {
+        val counts = HashMap(launchCounts())
+        counts[packageName] = ((counts[packageName] ?: 0) + 1).coerceAtMost(MAX_LAUNCH_COUNT)
+        sp.edit().putString(
+            KEY_USAGE,
+            counts.entries.joinToString(";") { "${it.key}=${it.value}" },
+        ).apply()
+    }
+
+    fun clearLaunchCounts() {
+        sp.edit().remove(KEY_USAGE).apply()
+    }
+
     companion object {
         const val MIN_PANEL_HEIGHT = 35
         const val MAX_PANEL_HEIGHT = 95
@@ -63,5 +98,8 @@ class Prefs(context: Context) {
         private const val KEY_PANEL_HEIGHT = "panel_height"
         private const val KEY_KEY_VIBRATION = "key_vibration"
         private const val KEY_GRID_COLUMNS = "grid_columns"
+        private const val KEY_SORT_BY_USAGE = "sort_by_usage"
+        private const val KEY_USAGE = "launch_counts"
+        private const val MAX_LAUNCH_COUNT = 9999
     }
 }

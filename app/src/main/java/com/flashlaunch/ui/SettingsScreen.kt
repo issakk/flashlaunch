@@ -142,6 +142,22 @@ fun SettingsScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                     )
                 }
             }
+            item {
+                SettingSwitch(
+                    title = "按使用频率排序",
+                    subtitle = "启动次数多的排前面；搜索结果同分时也会优先",
+                    checked = state.sortByUsage,
+                    onCheckedChange = viewModel::setSortByUsage,
+                )
+            }
+            item {
+                SettingRow(
+                    title = "使用记录",
+                    subtitle = "只记启动次数，存在本机",
+                    action = "清空",
+                    onAction = viewModel::clearUsage,
+                )
+            }
 
             item { SectionTitle("权限") }
             item {

@@ -40,6 +40,7 @@ data class UiState(
     val showHidden: Boolean = false,
     val panelHeight: Int = 60,
     val gridColumns: Int = 5,
+    val sortByUsage: Boolean = true,
     val keyVibration: Boolean = true,
     val lastLaunchedAt: Long = 0L,
     val privilege: PrivilegeStatus = PrivilegeStatus(),
@@ -58,6 +59,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     /** Last loaded app list; only replaced when something actually changed. */
     private var loaded: List<AppEntry> = emptyList()
     private var loadedVersion = 0
+    private var usageVersion = 0
 
     /** Filtered + sorted list used for an empty query (cached). */
     private var base: List<AppEntry> = emptyList()
@@ -73,6 +75,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             hidden = prefs.hiddenApps(),
             panelHeight = prefs.panelHeight,
             gridColumns = prefs.gridColumns,
+            sortByUsage = prefs.sortByUsage,
             keyVibration = prefs.keyVibration,
         )
     )
@@ -224,6 +227,19 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(gridColumns = prefs.gridColumns) }
     }
 
+    fun setSortByUsage(value: Boolean) {
+        prefs.sortByUsage = value
+        _state.update { it.copy(sortByUsage = value) }
+        recompute()
+    }
+
+    fun clearUsage() {
+        prefs.clearLaunchCounts()
+        usageVersion++
+        _state.update { it.copy(message = "使用记录已清空") }
+        recompute()
+    }
+
     fun setKeyVibration(value: Boolean) {
         prefs.keyVibration = value
         _state.update { it.copy(keyVibration = value) }
@@ -267,6 +283,9 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             }
             val launched = startEntry(ctx, entry)
             if (launched) {
+                // usage stat drives the default ordering next time the panel opens
+                prefs.recordLaunch(entry.packageName)
+                usageVersion++
                 _state.update { it.copy(lastLaunchedAt = System.currentTimeMillis()) }
             } else {
                 _state.update { it.copy(message = "无法打开 ${entry.label}") }
@@ -334,20 +353,37 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     /** Rebuilds the cached filtered/sorted list only when its inputs changed. */
     private fun ensureBase() {
         val snapshot = _state.value
-        val key = "${snapshot.showFrozen}|${snapshot.showHidden}|${snapshot.hidden.hashCode()}|$loadedVersion"
+        val key = buildString {
+            append(snapshot.showFrozen).append('|')
+            append(snapshot.showHidden).append('|')
+            append(snapshot.hidden.hashCode()).append('|')
+            append(loadedVersion).append('|')
+            append(snapshot.sortByUsage).append('|')
+            append(usageVersion)
+        }
         if (key == baseKey) return
         baseKey = key
-        base = loaded
-            .filter { entry ->
-                (snapshot.showFrozen || !entry.isFrozen) &&
-                    (snapshot.showHidden || !snapshot.hidden.contains(entry.packageName))
-            }
-            .sortedWith(compareBy({ it.sortKey }, { it.label }))
+
+        val visible = loaded.filter { entry ->
+            (snapshot.showFrozen || !entry.isFrozen) &&
+                (snapshot.showHidden || !snapshot.hidden.contains(entry.packageName))
+        }
+        base = if (snapshot.sortByUsage) {
+            val counts = prefs.launchCounts()
+            visible.sortedWith(
+                compareByDescending<AppEntry> { counts[it.packageName] ?: 0 }
+                    .thenBy { it.sortKey }
+                    .thenBy { it.label }
+            )
+        } else {
+            visible.sortedWith(compareBy<AppEntry> { it.sortKey }.thenBy { it.label })
+        }
     }
 
     private fun recompute() {
         ensureBase()
-        val query = Matcher.normalize(_state.value.query)
+        val snapshot = _state.value
+        val query = Matcher.normalize(snapshot.query)
 
         searchJob?.cancel()
         if (query.isEmpty()) {
@@ -356,21 +392,27 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val source = base
+        val counts = if (snapshot.sortByUsage) prefs.launchCounts() else emptyMap()
         searchJob = viewModelScope.launch {
             // scoring runs off the main thread; a newer keystroke cancels it
-            val found = withContext(Dispatchers.Default) { search(source, query) }
+            val found = withContext(Dispatchers.Default) { search(source, query, counts) }
             _state.update { state ->
                 if (Matcher.normalize(state.query) == query) state.copy(results = found) else state
             }
         }
     }
 
-    private fun search(source: List<AppEntry>, query: String): List<AppEntry> =
+    private fun search(
+        source: List<AppEntry>,
+        query: String,
+        counts: Map<String, Int>,
+    ): List<AppEntry> =
         source.asSequence()
             .map { it to Matcher.score(it, query) }
             .filter { it.second > 0 }
             .sortedWith(
                 compareByDescending<Pair<AppEntry, Int>> { it.second }
+                    .thenByDescending { counts[it.first.packageName] ?: 0 }
                     .thenBy { it.first.label }
             )
             .map { it.first }
