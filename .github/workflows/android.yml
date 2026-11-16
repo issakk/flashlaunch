@@ -60,6 +60,15 @@ jobs:
           set -o pipefail
           gradle :app:assembleRelease --no-daemon --console=plain --stacktrace 2>&1 | tee -a build.log
 
+      - name: Verify APKs are signed
+        run: |
+          set -o pipefail
+          BT="$(ls -d "${ANDROID_HOME}"/build-tools/* | sort -V | tail -1)"
+          for apk in app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk; do
+            echo "== $apk"
+            "$BT/apksigner" verify --print-certs "$apk" 2>&1 | tee -a build.log
+          done
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:

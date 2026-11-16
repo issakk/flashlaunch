@@ -48,6 +48,19 @@ pm enable --user 0 <pkg>         # 解冻
 
 两者都不可用时，长按菜单里的冻结项置灰并提示「需要 Root / Shizuku」。
 
+## 安装
+
+Actions 每次构建产出两个包，**都已签名、都能直接装**：
+
+| 包 | applicationId | 说明 |
+| --- | --- | --- |
+| `app-debug.apk` | `com.flashlaunch.debug` | 体积略大（含调试工具），可与正式包共存 |
+| `app-release.apk` | `com.flashlaunch` | 正式包 |
+
+签名用的是仓库自带的自签名证书 `app/keystore/flashlaunch.p12`（见该目录 README），
+所以每次构建的签名一致，可以直接覆盖升级。CI 里有 `apksigner verify` 兜底，
+万一签名丢了会直接红。
+
 ## 构建
 
 **本仓库不发本地构建**，所有构建都在 GitHub Actions 完成（`.github/workflows/android.yml`）：

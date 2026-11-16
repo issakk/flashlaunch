@@ -21,13 +21,26 @@ android {
     buildFeatures {
         compose = true
     }
+    // A checked-in self-signed key so every CI build is installable and
+    // upgradeable. It is not a secret: anyone can rebuild with it.
+    signingConfigs {
+        create("shared") {
+            storeFile = file("keystore/flashlaunch.p12")
+            storePassword = "flashlaunch"
+            keyAlias = "flashlaunch"
+            keyPassword = "flashlaunch"
+            storeType = "PKCS12"
+        }
+    }
 
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            signingConfig = signingConfigs.getByName("shared")
         }
         release {
+            signingConfig = signingConfigs.getByName("shared")
             // v0.1: keep R8 off so the release build is only a compile check
             isMinifyEnabled = false
             isShrinkResources = false
