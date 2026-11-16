@@ -24,7 +24,7 @@ class Prefs(context: Context) {
         HashSet(sp.getStringSet(KEY_HIDDEN, emptySet()) ?: emptySet())
 
     fun setHidden(pkg: String, hidden: Boolean) {
-        val set = hiddenApps()
+        val set = HashSet(hiddenApps())
         if (hidden) set.add(pkg) else set.remove(pkg)
         sp.edit().putStringSet(KEY_HIDDEN, set).apply()
     }

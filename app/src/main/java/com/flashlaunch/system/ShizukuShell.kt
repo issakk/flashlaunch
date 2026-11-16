@@ -3,12 +3,15 @@ package com.flashlaunch.system
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
+import moe.shizuku.server.IShizukuService
 import rikka.shizuku.Shizuku
-import java.util.concurrent.TimeUnit
 
 /**
- * Shizuku bridge: runs `pm` as the shell user (uid 2000), no root needed.
- * Requires the Shizuku app to be running and this app to be granted.
+ * Shizuku bridge: runs `sh` commands as the shell user (uid 2000), no root needed.
+ *
+ * `Shizuku.newProcess` is private in 13.x, so we go through the service binder
+ * directly; `IShizukuService` uses explicit transaction ids (newProcess = 7),
+ * which makes it stable across Shizuku 13.x versions.
  */
 object ShizukuShell {
 
@@ -50,14 +53,27 @@ object ShizukuShell {
 
     private fun exec(command: String, timeoutSeconds: Long = 20): Boolean {
         return try {
-            // output is discarded so a chatty command can never fill the pipe
-            val process = Shizuku.newProcess(
+            val binder = Shizuku.getBinder() ?: return false
+            val service = IShizukuService.Stub.asInterface(binder) ?: return false
+            // output is discarded so a chatty command can never fill a pipe
+            val process = service.newProcess(
                 arrayOf("sh", "-c", "$command >/dev/null 2>&1"),
                 null,
                 null,
-            )
-            if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
-                process.destroyForcibly()
+            ) ?: return false
+
+            val finished = try {
+                process.waitForTimeout(timeoutSeconds, "SECONDS")
+            } catch (t: Throwable) {
+                process.waitFor()
+                true
+            }
+            if (!finished) {
+                try {
+                    process.destroy()
+                } catch (t: Throwable) {
+                    // ignore
+                }
                 false
             } else {
                 process.exitValue() == 0
