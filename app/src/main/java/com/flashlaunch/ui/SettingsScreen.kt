@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.flashlaunch.system.PrivilegeStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,15 +75,23 @@ fun SettingsScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                 )
             }
 
-            item { SectionTitle("Root") }
+            item { SectionTitle("权限") }
             item {
-                SettingRow(
-                    title = "Root 状态",
-                    subtitle = if (state.rootAvailable) "已授权，可冻结 / 解冻应用" else "未授权，冻结与解冻不可用",
-                    action = "重新检测",
-                    onAction = viewModel::checkRoot,
+                ShizukuRow(
+                    privilege = state.privilege,
+                    onRequest = viewModel::requestShizukuPermission,
+                    onRefresh = { viewModel.refreshPrivilege(force = true) },
                 )
             }
+            item {
+                SettingRow(
+                    title = "Root",
+                    subtitle = if (state.privilege.rootAvailable) "su 可用" else "未检测到 su",
+                    action = "重新检测",
+                    onAction = viewModel::checkPrivilege,
+                )
+            }
+            item { HintRow("冻结 / 解冻优先走 Shizuku，没有 Shizuku 授权时回退到 Root。") }
 
             item { SectionTitle("已隐藏的应用（${state.hiddenCount}）") }
             if (state.hidden.isEmpty()) {
@@ -106,6 +115,39 @@ fun SettingsScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
         }
     }
 }
+
+@Composable
+private fun ShizukuRow(
+    privilege: PrivilegeStatus,
+    onRequest: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    val (subtitle, action) = when {
+        privilege.shizukuGranted -> "已授权，冻结 / 解冻走 Shizuku" to "重新检测"
+        privilege.shizukuRunning -> "服务已运行，尚未授权本应用" to "授权"
+        privilege.shizukuInstalled -> "已安装，但服务未运行" to "重新检测"
+        else -> "未安装 Shizuku（需先安装并启动服务）" to "重新检测"
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(text = "Shizuku", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(onClick = if (privilege.shizukuRunning && !privilege.shizukuGranted) onRequest else onRefresh) {
+            Text(action)
+        }
+    }
+}
+
 
 @Composable
 private fun SectionTitle(text: String) {

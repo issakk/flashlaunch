@@ -180,7 +180,7 @@ fun HomeScreen(viewModel: AppsViewModel) {
             AppActions(
                 entry = current,
                 hidden = state.hidden.contains(current.packageName),
-                rootAvailable = state.rootAvailable,
+                canFreeze = state.canFreeze,
                 onOpen = {
                     sheetApp = null
                     viewModel.openApp(current)
@@ -477,7 +477,7 @@ private fun StatusChip(text: String) {
 private fun AppActions(
     entry: AppEntry,
     hidden: Boolean,
-    rootAvailable: Boolean,
+    canFreeze: Boolean,
     onOpen: () -> Unit,
     onAppInfo: () -> Unit,
     onToggleHidden: () -> Unit,
@@ -519,8 +519,8 @@ private fun AppActions(
         ActionRow(title = if (hidden) "取消隐藏" else "隐藏", onClick = onToggleHidden)
         ActionRow(
             title = if (entry.isFrozen) "解冻" else "冻结",
-            trailing = if (rootAvailable) null else "需要 Root",
-            enabled = rootAvailable,
+            trailing = if (canFreeze) null else "需要 Root / Shizuku",
+            enabled = canFreeze,
             onClick = onToggleFrozen,
         )
     }

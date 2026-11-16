@@ -11,7 +11,7 @@
 | 多模搜索 | 中文直接匹配、全拼 `weixin`、首字母 `wx`、T9 数字 `93494`、子序列 `wxtb` → 微信淘宝 |
 | 收藏式置顶 | 无 |
 | 隐藏应用 | 长按 → 隐藏；隐藏项从列表消失，可在设置页恢复 |
-| 冻结应用 | 长按 → 冻结 / 解冻（需要 Root）；冻结的应用点击后自动解冻再打开 |
+| 冻结应用 | 长按 → 冻结 / 解冻（Shizuku 或 Root）；冻结的应用点击后自动解冻再打开 |
 | 排序 | 空查询按拼音排序，查询时按匹配分数排序 |
 
 ## 搜索算法
@@ -32,15 +32,21 @@ Google Maps  -> label=google maps pinyinFull=googlemaps pinyinInitials=gm
 
 ## 冻结 / 解冻
 
-Android 没有公开 API 让普通应用禁用别的应用，因此通过 `su` 执行：
+Android 没有公开 API 让普通应用禁用别的应用，因此通过外部身份执行 `pm`：
 
 ```sh
 pm disable-user --user 0 <pkg>   # 冻结
 pm enable --user 0 <pkg>         # 解冻
 ```
 
-未 Root 时相关入口置灰并提示"需要 Root"。
-（后续可加 Shizuku 支持，走 `pm` 的 binder 调用，免 Root。）
+两条通道，自动择一（设置页可看当前生效的通道）：
+
+1. **Shizuku（推荐，免 Root）** —— 装了 Shizuku 并在其中启动服务后，设置页点「授权」；
+   之后以 shell 用户（uid 2000）执行 `pm`。用的是 `dev.rikka.shizuku:api` +
+   `ShizukuProvider`（manifest 里 `${applicationId}.shizuku`）。
+2. **Root** —— `su -c` 执行同样的命令。`su` 探测结果会缓存，避免每次回前台都弹授权框。
+
+两者都不可用时，长按菜单里的冻结项置灰并提示「需要 Root / Shizuku」。
 
 ## 构建
 
@@ -80,5 +86,5 @@ tools/gen_pinyin.py   生成拼音资产
 - [ ] 收藏栏（置顶常用应用）
 - [ ] 快捷设置磁贴 / 桌面小工具 / 通知栏唤起
 - [ ] 悬浮窗快捷唤醒
-- [ ] Shizuku 免 Root 冻结
+- [x] Shizuku 免 Root 冻结
 - [ ] 应用活动（Activity）跳转与收藏

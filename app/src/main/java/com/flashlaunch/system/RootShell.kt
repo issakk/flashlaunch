@@ -4,32 +4,53 @@ import android.util.Log
 import java.util.concurrent.TimeUnit
 
 /**
- * Minimal `su` bridge. Used to freeze (pm disable-user) and unfreeze (pm enable)
- * apps; there is no non-root API for that on a normal device.
+ * Minimal `su` bridge, used when Shizuku is not available.
+ * The probe result is cached so we do not pop a root prompt on every resume.
  */
 object RootShell {
 
     private const val TAG = "FlashLaunch"
 
-    fun isRooted(): Boolean = run("id", 6)?.contains("uid=0") == true
+    @Volatile
+    private var cached: Boolean? = null
 
-    fun freeze(pkg: String): Boolean = run("pm disable-user --user 0 $pkg", 15) != null
+    /** Probes (or returns the cached answer) and caches it. */
+    fun isRooted(): Boolean {
+        cached?.let { return it }
+        return run("id")?.contains("uid=0") == true
+    }
 
-    fun unfreeze(pkg: String): Boolean = run("pm enable --user 0 $pkg", 15) != null
+    /** Cached answer only; never spawns `su`. */
+    fun isRootedCached(): Boolean = cached ?: false
 
-    private fun run(command: String, timeoutSeconds: Long): String? {
+    fun resetCache() {
+        cached = null
+    }
+
+    fun freeze(pkg: String): Boolean = run("pm disable-user --user 0 $pkg") != null
+
+    fun unfreeze(pkg: String): Boolean = run("pm enable --user 0 $pkg") != null
+
+    private fun run(command: String, timeoutSeconds: Long = 15): String? {
         return try {
             val process = ProcessBuilder("su", "-c", command)
                 .redirectErrorStream(true)
                 .start()
             if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
+                cached = false
                 null
             } else {
                 val output = process.inputStream.bufferedReader().use { it.readText() }
-                if (process.exitValue() == 0) output else null
+                if (process.exitValue() == 0) {
+                    output
+                } else {
+                    null
+                }
             }
         } catch (t: Throwable) {
+            // no su binary at all: remember that
+            if (command == "id") cached = false
             Log.w(TAG, "root exec failed: $command", t)
             null
         }

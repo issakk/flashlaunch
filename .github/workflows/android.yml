@@ -79,14 +79,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -f build.log ]; then tail -c 7000 build.log > tail.log; else echo "no build.log produced" > tail.log; fi
+          if [ ! -f build.log ]; then echo "(no build.log was produced)" > build.log; fi
           {
             echo "### Build failed: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo ""
             echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo ""
+            echo "#### Compiler errors"
             echo '```'
-            cat tail.log
+            grep -E "^e: |error: " build.log | head -80 || true
+            echo '```'
+            echo "#### Gradle failure"
+            echo '```'
+            grep -A 20 -E "^\\* What went wrong" build.log | head -40 || true
+            echo '```'
+            echo "#### Tail"
+            echo '```'
+            tail -c 1200 build.log
             echo '```'
           } > comment.md
           gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" -F body=@comment.md || true

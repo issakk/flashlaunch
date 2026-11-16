@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,7 +14,11 @@ import com.flashlaunch.data.AppEntry
 import com.flashlaunch.data.AppRepository
 import com.flashlaunch.data.Prefs
 import com.flashlaunch.search.Matcher
+import com.flashlaunch.system.PrivilegeMode
+import com.flashlaunch.system.PrivilegeStatus
+import com.flashlaunch.system.Privileged
 import com.flashlaunch.system.RootShell
+import com.flashlaunch.system.ShizukuShell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +27,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import rikka.shizuku.Shizuku
 
 data class UiState(
     val allApps: List<AppEntry> = emptyList(),
@@ -31,11 +37,12 @@ data class UiState(
     val loading: Boolean = true,
     val showFrozen: Boolean = true,
     val showHidden: Boolean = false,
-    val rootAvailable: Boolean = false,
+    val privilege: PrivilegeStatus = PrivilegeStatus(),
     val message: String? = null,
 ) {
     val hiddenCount: Int get() = hidden.size
     val frozenCount: Int get() = allApps.count { it.isFrozen }
+    val canFreeze: Boolean get() = privilege.canFreeze
 }
 
 class AppsViewModel(app: Application) : AndroidViewModel(app) {
@@ -59,6 +66,22 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private val permissionListener = Shizuku.OnRequestPermissionResultListener { _, grantResult ->
+        val granted = grantResult == PackageManager.PERMISSION_GRANTED
+        _state.update {
+            it.copy(message = if (granted) "Shizuku 已授权" else "Shizuku 授权被拒绝")
+        }
+        refreshPrivilege()
+    }
+
+    private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
+        refreshPrivilege()
+    }
+
+    private val binderDeadListener = Shizuku.OnBinderDeadListener {
+        refreshPrivilege()
+    }
+
     init {
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
@@ -77,11 +100,15 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         } catch (t: Throwable) {
             // ignore: package broadcasts are a convenience, not a requirement
         }
-        refresh(silent = false)
-        viewModelScope.launch {
-            val rooted = withContext(Dispatchers.IO) { RootShell.isRooted() }
-            _state.update { it.copy(rootAvailable = rooted) }
+        try {
+            Shizuku.addRequestPermissionResultListener(permissionListener)
+            Shizuku.addBinderReceivedListener(binderReceivedListener)
+            Shizuku.addBinderDeadListener(binderDeadListener)
+        } catch (t: Throwable) {
+            // Shizuku not installed: every other Shizuku call is guarded anyway
         }
+        refresh(silent = false)
+        refreshPrivilege()
     }
 
     override fun onCleared() {
@@ -90,11 +117,19 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         } catch (t: Throwable) {
             // already gone
         }
+        try {
+            Shizuku.removeRequestPermissionResultListener(permissionListener)
+            Shizuku.removeBinderReceivedListener(binderReceivedListener)
+            Shizuku.removeBinderDeadListener(binderDeadListener)
+        } catch (t: Throwable) {
+            // nothing registered
+        }
         super.onCleared()
     }
 
     fun onResume() {
         if (loaded.isNotEmpty()) refresh(silent = true)
+        refreshPrivilege()
     }
 
     fun refresh(silent: Boolean = true) {
@@ -114,6 +149,16 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
             recompute()
+        }
+    }
+
+    fun refreshPrivilege(force: Boolean = false) {
+        viewModelScope.launch {
+            val status = withContext(Dispatchers.IO) {
+                if (force) RootShell.resetCache()
+                Privileged.status(getApplication())
+            }
+            _state.update { it.copy(privilege = status) }
         }
     }
 
@@ -156,9 +201,11 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
             if (entry.isFrozen) {
-                val unfrozen = withContext(Dispatchers.IO) { RootShell.unfreeze(entry.packageName) }
+                val unfrozen = withContext(Dispatchers.IO) { Privileged.unfreeze(entry.packageName) }
                 if (!unfrozen) {
-                    _state.update { it.copy(message = "解冻 ${entry.label} 需要 Root 权限") }
+                    _state.update {
+                        it.copy(message = "解冻 ${entry.label} 需要 Root 或 Shizuku 授权")
+                    }
                     return@launch
                 }
                 delay(250)
@@ -174,12 +221,13 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     fun setFrozen(entry: AppEntry, frozen: Boolean) {
         viewModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
-                if (frozen) RootShell.freeze(entry.packageName) else RootShell.unfreeze(entry.packageName)
+                if (frozen) Privileged.freeze(entry.packageName) else Privileged.unfreeze(entry.packageName)
             }
             _state.update {
                 it.copy(
                     message = when {
-                        !ok -> "操作 ${entry.label} 需要 Root 权限"
+                        !ok && frozen -> "冻结 ${entry.label} 需要 Root 或 Shizuku 授权"
+                        !ok -> "解冻 ${entry.label} 需要 Root 或 Shizuku 授权"
                         frozen -> "已冻结 ${entry.label}"
                         else -> "已解冻 ${entry.label}"
                     }
@@ -192,13 +240,32 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun checkRoot() {
+    /** Asks Shizuku for its permission (shows the Shizuku grant dialog). */
+    fun requestShizukuPermission() {
+        val privilege = _state.value.privilege
+        when {
+            privilege.shizukuGranted -> _state.update { it.copy(message = "Shizuku 已授权") }
+            !privilege.shizukuRunning -> _state.update {
+                it.copy(message = "Shizuku 服务未运行，请先打开 Shizuku")
+            }
+            else -> ShizukuShell.requestPermission()
+        }
+    }
+
+    fun checkPrivilege() {
         viewModelScope.launch {
-            val rooted = withContext(Dispatchers.IO) { RootShell.isRooted() }
+            val status = withContext(Dispatchers.IO) {
+                RootShell.resetCache()
+                Privileged.status(getApplication())
+            }
             _state.update {
                 it.copy(
-                    rootAvailable = rooted,
-                    message = if (rooted) "Root 可用" else "未检测到 Root",
+                    privilege = status,
+                    message = when (status.mode) {
+                        PrivilegeMode.SHIZUKU -> "已通过 Shizuku 获得权限"
+                        PrivilegeMode.ROOT -> "已通过 Root 获得权限"
+                        PrivilegeMode.NONE -> "未获得 Root 或 Shizuku 授权"
+                    }
                 )
             }
         }
