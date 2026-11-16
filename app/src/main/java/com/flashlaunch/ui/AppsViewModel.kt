@@ -39,6 +39,7 @@ data class UiState(
     val showHidden: Boolean = false,
     val panelHeight: Int = 60,
     val lastLaunchedAt: Long = 0L,
+    val keyVibration: Boolean = true,
     val privilege: PrivilegeStatus = PrivilegeStatus(),
     val message: String? = null,
 ) {
@@ -59,6 +60,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             showHidden = prefs.showHidden,
             hidden = prefs.hiddenApps(),
             panelHeight = prefs.panelHeight,
+            keyVibration = prefs.keyVibration,
         )
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -190,6 +192,11 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun consumeLaunchSignal() {
         _state.update { it.copy(lastLaunchedAt = 0L) }
+    }
+
+    fun setKeyVibration(value: Boolean) {
+        prefs.keyVibration = value
+        _state.update { it.copy(keyVibration = value) }
     }
     fun toggleHidden(entry: AppEntry) {
         toggleHiddenByPackage(entry.packageName)

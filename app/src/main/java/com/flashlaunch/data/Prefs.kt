@@ -27,6 +27,13 @@ class Prefs(context: Context) {
             sp.edit().putInt(KEY_PANEL_HEIGHT, value.coerceIn(MIN_PANEL_HEIGHT, MAX_PANEL_HEIGHT)).apply()
         }
 
+    /** Haptic feedback when a keypad key is pressed. */
+    var keyVibration: Boolean
+        get() = sp.getBoolean(KEY_KEY_VIBRATION, true)
+        set(value) {
+            sp.edit().putBoolean(KEY_KEY_VIBRATION, value).apply()
+        }
+
     fun hiddenApps(): Set<String> =
         HashSet(sp.getStringSet(KEY_HIDDEN, emptySet()) ?: emptySet())
 
@@ -45,5 +52,6 @@ class Prefs(context: Context) {
         private const val KEY_SHOW_FROZEN = "show_frozen"
         private const val KEY_SHOW_HIDDEN = "show_hidden"
         private const val KEY_PANEL_HEIGHT = "panel_height"
+        private const val KEY_KEY_VIBRATION = "key_vibration"
     }
 }

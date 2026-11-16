@@ -106,6 +106,14 @@ fun SettingsScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                     )
                 }
             }
+            item {
+                SettingSwitch(
+                    title = "按键振动",
+                    subtitle = "按九宫格按键时给出触感反馈",
+                    checked = state.keyVibration,
+                    onCheckedChange = viewModel::setKeyVibration,
+                )
+            }
 
             item { SectionTitle("权限") }
             item {

@@ -3,6 +3,7 @@ package com.flashlaunch.ui
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -53,6 +54,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -61,6 +64,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.flashlaunch.R
 import com.flashlaunch.data.AppEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -149,6 +153,7 @@ fun HomeScreen(viewModel: AppsViewModel) {
                     onDigit = { digit -> viewModel.setQuery(state.query + digit) },
                     onBackspace = { viewModel.setQuery(state.query.dropLast(1)) },
                     onClear = { viewModel.setQuery("") },
+                    vibrate = state.keyVibration,
                 )
             }
         }
@@ -249,6 +254,7 @@ private fun NineKeyPad(
     onDigit: (String) -> Unit,
     onBackspace: () -> Unit,
     onClear: () -> Unit,
+    vibrate: Boolean,
 ) {
     Column(
         modifier = Modifier
@@ -265,6 +271,7 @@ private fun NineKeyPad(
                     PadButton(
                         key = key,
                         modifier = Modifier.weight(1f),
+                        vibrate = vibrate,
                         onClick = {
                             when (key.main) {
                                 "⌫" -> onBackspace()
@@ -280,12 +287,23 @@ private fun NineKeyPad(
 }
 
 @Composable
-private fun PadButton(key: PadKey, modifier: Modifier, onClick: () -> Unit) {
+private fun PadButton(
+    key: PadKey,
+    modifier: Modifier,
+    vibrate: Boolean,
+    onClick: () -> Unit,
+) {
+    val view = LocalView.current
     Surface(
         modifier = modifier
             .defaultMinSize(minHeight = 42.dp)
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick),
+            .clickable {
+                if (vibrate) {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                }
+                onClick()
+            },
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
     ) {
@@ -401,10 +419,18 @@ private fun AppGridItem(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .size(11.dp)
+                        .size(16.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.tertiary)
-                )
+                        .background(MaterialTheme.colorScheme.surface),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_snowflake),
+                        contentDescription = "已冻结",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(11.dp),
+                    )
+                }
             }
         }
         Spacer(Modifier.height(5.dp))
