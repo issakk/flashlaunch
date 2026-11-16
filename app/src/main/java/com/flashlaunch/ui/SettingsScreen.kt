@@ -143,6 +143,34 @@ fun SettingsScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                 }
             }
             item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "键盘高度", style = MaterialTheme.typography.bodyLarge)
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = "${state.keypadPercent}%",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Slider(
+                        value = state.keypadPercent.toFloat(),
+                        onValueChange = { viewModel.setKeypadPercent(it.toInt()) },
+                        valueRange = Prefs.MIN_KEYPAD_PERCENT.toFloat()..Prefs.MAX_KEYPAD_PERCENT.toFloat(),
+                        steps = 8,
+                    )
+                    Text(
+                        text = "占面板高度的 35%~80%，剩下的是应用网格",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            item {
                 SettingSwitch(
                     title = "按使用频率排序",
                     subtitle = "启动次数多的排前面；搜索结果同分时也会优先",

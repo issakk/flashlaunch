@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,14 +27,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -103,13 +99,6 @@ fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
             SettingsScreen(viewModel = viewModel, onClose = { settingsOpen = false })
         } else {
             Column(Modifier.fillMaxSize()) {
-                QueryBar(
-                    query = state.query,
-                    onClear = { viewModel.setQuery("") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                )
 
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     when {
@@ -120,7 +109,7 @@ fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                             CircularProgressIndicator()
                         }
 
-                        state.results.isEmpty() -> EmptyState(hasQuery = state.query.isNotBlank())
+                        state.results.isEmpty() -> EmptyState(query = state.query)
 
                         // The grid stays a grid while searching; only the rows change.
                         else -> {
@@ -138,6 +127,7 @@ fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                 }
 
                 NineKeyPad(
+                    modifier = Modifier.fillMaxHeight(state.keypadPercent / 100f),
                     vibrate = state.keyVibration,
                     canOpenFirst = state.results.isNotEmpty(),
                     onDigit = { digit -> viewModel.setQuery(state.query + digit) },
@@ -182,54 +172,6 @@ fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
     }
 }
 
-/** Read-only query display: input comes from the T9 pad, not the IME. */
-@Composable
-private fun QueryBar(
-    query: String,
-    onClear: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier.height(46.dp),
-        shape = RoundedCornerShape(23.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Search,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                text = query.ifEmpty { "拼音首字母 / T9 数字，键盘在下方" },
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (query.isEmpty()) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            if (query.isNotEmpty()) {
-                IconButton(onClick = onClear, modifier = Modifier.size(28.dp)) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = "清空",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-        }
-    }
-}
 
 private sealed interface PadKey {
     data class Digit(val value: String, val letters: String = "") : PadKey
@@ -242,7 +184,7 @@ private sealed interface PadKey {
 
 private val PAD_ROWS: List<List<PadKey>> = listOf(
     listOf(PadKey.Settings, PadKey.OpenFirst, PadKey.Backspace),
-    listOf(PadKey.Digit("1"), PadKey.Digit("2", "abc"), PadKey.Digit("3", "def")),
+    listOf(PadKey.Digit("1", "-"), PadKey.Digit("2", "abc"), PadKey.Digit("3", "def")),
     listOf(PadKey.Digit("4", "ghi"), PadKey.Digit("5", "jkl"), PadKey.Digit("6", "mno")),
     listOf(PadKey.Digit("7", "pqrs"), PadKey.Digit("8", "tuv"), PadKey.Digit("9", "wxyz")),
     listOf(PadKey.Clear, PadKey.Digit("0"), PadKey.Close),
@@ -251,6 +193,7 @@ private val PAD_ROWS: List<List<PadKey>> = listOf(
 /** Phone-style T9 keypad with a control row for settings / launch-first / backspace. */
 @Composable
 private fun NineKeyPad(
+    modifier: Modifier = Modifier,
     vibrate: Boolean,
     canOpenFirst: Boolean,
     onDigit: (String) -> Unit,
@@ -261,20 +204,20 @@ private fun NineKeyPad(
     onClose: () -> Unit,
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 8.dp),
     ) {
         PAD_ROWS.forEachIndexed { index, row ->
             if (index > 0) Spacer(Modifier.height(5.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 row.forEach { key ->
                     PadButton(
                         key = key,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
                         vibrate = vibrate,
                         enabled = !(key is PadKey.OpenFirst && !canOpenFirst),
                         onClick = {
@@ -324,7 +267,7 @@ private fun PadButton(
 
     Surface(
         modifier = modifier
-            .defaultMinSize(minHeight = 40.dp)
+            .fillMaxHeight()
             .clip(RoundedCornerShape(12.dp))
             .clickable(enabled = enabled) {
                 if (vibrate) {
@@ -374,16 +317,32 @@ private fun AppsHeader(state: UiState) {
             .padding(horizontal = 16.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = buildString {
-                append(state.results.size)
-                append(" 个应用")
-                if (state.frozenCount > 0) append(" · 冻结 ${state.frozenCount}")
-                if (state.hiddenCount > 0) append(" · 隐藏 ${state.hiddenCount}")
-            },
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (state.query.isBlank()) {
+            Text(
+                text = buildString {
+                    append(state.results.size)
+                    append(" 个应用")
+                    if (state.frozenCount > 0) append(" · 冻结 ${state.frozenCount}")
+                    if (state.hiddenCount > 0) append(" · 隐藏 ${state.hiddenCount}")
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                text = state.query,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "${state.results.size} 个匹配",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.weight(1f))
         Text(
             text = "长按管理",
@@ -394,11 +353,12 @@ private fun AppsHeader(state: UiState) {
 }
 
 @Composable
-private fun EmptyState(hasQuery: Boolean) {
+private fun EmptyState(query: String) {
+    val hasQuery = query.isNotBlank()
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = if (hasQuery) "没有匹配的应用" else "没有可显示的应用",
+                text = if (hasQuery) "没有匹配「$query」的应用" else "没有可显示的应用",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

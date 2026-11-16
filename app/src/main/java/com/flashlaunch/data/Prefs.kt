@@ -34,6 +34,13 @@ class Prefs(context: Context) {
             sp.edit().putInt(KEY_GRID_COLUMNS, value.coerceIn(MIN_GRID_COLUMNS, MAX_GRID_COLUMNS)).apply()
         }
 
+    /** Keypad height as a percentage of the panel height. */
+    var keypadPercent: Int
+        get() = sp.getInt(KEY_KEYPAD_PERCENT, DEFAULT_KEYPAD_PERCENT).coerceIn(MIN_KEYPAD_PERCENT, MAX_KEYPAD_PERCENT)
+        set(value) {
+            sp.edit().putInt(KEY_KEYPAD_PERCENT, value.coerceIn(MIN_KEYPAD_PERCENT, MAX_KEYPAD_PERCENT)).apply()
+        }
+
     /** Haptic feedback when a keypad key is pressed. */
     var keyVibration: Boolean
         get() = sp.getBoolean(KEY_KEY_VIBRATION, true)
@@ -92,12 +99,16 @@ class Prefs(context: Context) {
         const val MIN_GRID_COLUMNS = 3
         const val MAX_GRID_COLUMNS = 8
         const val DEFAULT_GRID_COLUMNS = 5
+        const val MIN_KEYPAD_PERCENT = 35
+        const val MAX_KEYPAD_PERCENT = 80
+        const val DEFAULT_KEYPAD_PERCENT = 52
         private const val KEY_HIDDEN = "hidden_apps"
         private const val KEY_SHOW_FROZEN = "show_frozen"
         private const val KEY_SHOW_HIDDEN = "show_hidden"
         private const val KEY_PANEL_HEIGHT = "panel_height"
         private const val KEY_KEY_VIBRATION = "key_vibration"
         private const val KEY_GRID_COLUMNS = "grid_columns"
+        private const val KEY_KEYPAD_PERCENT = "keypad_percent"
         private const val KEY_SORT_BY_USAGE = "sort_by_usage"
         private const val KEY_USAGE = "launch_counts"
         private const val MAX_LAUNCH_COUNT = 9999
