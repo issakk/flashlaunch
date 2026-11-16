@@ -142,6 +142,7 @@ fun HomeScreen(viewModel: AppsViewModel) {
                                 )
                             }
                         }
+                    }
                 }
 
                 NineKeyPad(
