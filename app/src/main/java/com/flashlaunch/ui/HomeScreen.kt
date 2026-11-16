@@ -141,6 +141,7 @@ fun HomeScreen(viewModel: AppsViewModel) {
                                 AppsHeader(state)
                                 AppGrid(
                                     apps = state.results,
+                                    columns = state.gridColumns,
                                     onClick = viewModel::openApp,
                                     onLongClick = { sheetApp = it },
                                 )
@@ -380,17 +381,24 @@ private fun EmptyState(hasQuery: Boolean) {
 @Composable
 private fun AppGrid(
     apps: List<AppEntry>,
+    columns: Int,
     onClick: (AppEntry) -> Unit,
     onLongClick: (AppEntry) -> Unit,
 ) {
+    val iconSize = when {
+        columns <= 4 -> 56.dp
+        columns == 5 -> 46.dp
+        columns == 6 -> 40.dp
+        else -> 34.dp
+    }
     LazyVerticalGrid(
-        columns = GridCells.Fixed(5),
+        columns = GridCells.Fixed(columns),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         items(items = apps, key = { it.packageName }) { entry ->
-            AppGridItem(entry, onClick, onLongClick)
+            AppGridItem(entry, iconSize, onClick, onLongClick)
         }
     }
 }
@@ -399,6 +407,7 @@ private fun AppGrid(
 @Composable
 private fun AppGridItem(
     entry: AppEntry,
+    iconSize: Dp,
     onClick: (AppEntry) -> Unit,
     onLongClick: (AppEntry) -> Unit,
 ) {
@@ -414,7 +423,7 @@ private fun AppGridItem(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box {
-            AppIcon(entry = entry, size = 46.dp)
+            AppIcon(entry = entry, size = iconSize)
             if (entry.isFrozen) {
                 Box(
                     modifier = Modifier

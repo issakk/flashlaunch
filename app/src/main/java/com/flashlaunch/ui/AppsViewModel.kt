@@ -20,6 +20,7 @@ import com.flashlaunch.system.Privileged
 import com.flashlaunch.system.RootShell
 import com.flashlaunch.system.ShizukuShell
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,8 +39,9 @@ data class UiState(
     val showFrozen: Boolean = true,
     val showHidden: Boolean = false,
     val panelHeight: Int = 60,
-    val lastLaunchedAt: Long = 0L,
+    val gridColumns: Int = 5,
     val keyVibration: Boolean = true,
+    val lastLaunchedAt: Long = 0L,
     val privilege: PrivilegeStatus = PrivilegeStatus(),
     val message: String? = null,
 ) {
@@ -52,7 +54,17 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repository = AppRepository(app)
     private val prefs = Prefs(app)
+
+    /** Last loaded app list; only replaced when something actually changed. */
     private var loaded: List<AppEntry> = emptyList()
+    private var loadedVersion = 0
+
+    /** Filtered + sorted list used for an empty query (cached). */
+    private var base: List<AppEntry> = emptyList()
+    private var baseKey = ""
+
+    /** In-flight scoring job, cancelled when a newer keystroke arrives. */
+    private var searchJob: Job? = null
 
     private val _state = MutableStateFlow(
         UiState(
@@ -60,6 +72,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             showHidden = prefs.showHidden,
             hidden = prefs.hiddenApps(),
             panelHeight = prefs.panelHeight,
+            gridColumns = prefs.gridColumns,
             keyVibration = prefs.keyVibration,
         )
     )
@@ -143,14 +156,30 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             val apps = withContext(Dispatchers.IO) {
                 runCatching { repository.load() }.getOrElse { emptyList() }
             }
-            loaded = apps
+            val hidden = prefs.hiddenApps()
+            val current = _state.value
+
+            // Nothing moved: skip the state update so the grid is not recomposed.
+            if (sameContent(apps, loaded) &&
+                current.hidden == hidden &&
+                current.showFrozen == prefs.showFrozen &&
+                current.showHidden == prefs.showHidden
+            ) {
+                if (current.loading) _state.update { it.copy(loading = false) }
+                return@launch
+            }
+
+            if (!sameContent(apps, loaded)) {
+                loaded = apps
+                loadedVersion++
+            }
             _state.update {
                 it.copy(
                     allApps = apps,
                     loading = false,
                     showFrozen = prefs.showFrozen,
                     showHidden = prefs.showHidden,
-                    hidden = prefs.hiddenApps(),
+                    hidden = hidden,
                 )
             }
             recompute()
@@ -168,6 +197,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setQuery(query: String) {
+        if (query == _state.value.query) return
         _state.update { it.copy(query = query) }
         recompute()
     }
@@ -184,20 +214,25 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         recompute()
     }
 
-
     fun setPanelHeight(percent: Int) {
         prefs.panelHeight = percent
         _state.update { it.copy(panelHeight = prefs.panelHeight) }
     }
 
-    fun consumeLaunchSignal() {
-        _state.update { it.copy(lastLaunchedAt = 0L) }
+    fun setGridColumns(columns: Int) {
+        prefs.gridColumns = columns
+        _state.update { it.copy(gridColumns = prefs.gridColumns) }
     }
 
     fun setKeyVibration(value: Boolean) {
         prefs.keyVibration = value
         _state.update { it.copy(keyVibration = value) }
     }
+
+    fun consumeLaunchSignal() {
+        _state.update { it.copy(lastLaunchedAt = 0L) }
+    }
+
     fun toggleHidden(entry: AppEntry) {
         toggleHiddenByPackage(entry.packageName)
     }
@@ -233,8 +268,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             val launched = startEntry(ctx, entry)
             if (launched) {
                 _state.update { it.copy(lastLaunchedAt = System.currentTimeMillis()) }
-            }
-            if (!launched) {
+            } else {
                 _state.update { it.copy(message = "无法打开 ${entry.label}") }
             }
         }
@@ -297,28 +331,67 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(message = null) }
     }
 
-    private fun recompute() {
+    /** Rebuilds the cached filtered/sorted list only when its inputs changed. */
+    private fun ensureBase() {
         val snapshot = _state.value
-        val visible = loaded.filter { entry ->
-            (snapshot.showFrozen || !entry.isFrozen) &&
-                (snapshot.showHidden || !snapshot.hidden.contains(entry.packageName))
+        val key = "${snapshot.showFrozen}|${snapshot.showHidden}|${snapshot.hidden.hashCode()}|$loadedVersion"
+        if (key == baseKey) return
+        baseKey = key
+        base = loaded
+            .filter { entry ->
+                (snapshot.showFrozen || !entry.isFrozen) &&
+                    (snapshot.showHidden || !snapshot.hidden.contains(entry.packageName))
+            }
+            .sortedWith(compareBy({ it.sortKey }, { it.label }))
+    }
+
+    private fun recompute() {
+        ensureBase()
+        val query = Matcher.normalize(_state.value.query)
+
+        searchJob?.cancel()
+        if (query.isEmpty()) {
+            _state.update { it.copy(results = base) }
+            return
         }
-        val query = Matcher.normalize(snapshot.query)
-        val ordered = if (query.isEmpty()) {
-            visible.sortedWith(compareBy({ it.sortKey }, { it.label }))
-        } else {
-            visible.asSequence()
-                .map { it to Matcher.score(it, query) }
-                .filter { it.second > 0 }
-                .sortedWith(
-                    compareByDescending<Pair<AppEntry, Int>> { it.second }
-                        .thenBy { it.first.label }
-                )
-                .map { it.first }
-                .take(MAX_RESULTS)
-                .toList()
+
+        val source = base
+        searchJob = viewModelScope.launch {
+            // scoring runs off the main thread; a newer keystroke cancels it
+            val found = withContext(Dispatchers.Default) { search(source, query) }
+            _state.update { state ->
+                if (Matcher.normalize(state.query) == query) state.copy(results = found) else state
+            }
         }
-        _state.update { it.copy(results = ordered) }
+    }
+
+    private fun search(source: List<AppEntry>, query: String): List<AppEntry> =
+        source.asSequence()
+            .map { it to Matcher.score(it, query) }
+            .filter { it.second > 0 }
+            .sortedWith(
+                compareByDescending<Pair<AppEntry, Int>> { it.second }
+                    .thenBy { it.first.label }
+            )
+            .map { it.first }
+            .take(MAX_RESULTS)
+            .toList()
+
+    private fun sameContent(a: List<AppEntry>, b: List<AppEntry>): Boolean {
+        if (a === b) return true
+        if (a.size != b.size) return false
+        for (i in a.indices) {
+            val x = a[i]
+            val y = b[i]
+            if (x.packageName != y.packageName ||
+                x.activityName != y.activityName ||
+                x.label != y.label ||
+                x.isFrozen != y.isFrozen
+            ) {
+                return false
+            }
+        }
+        return true
     }
 
     private fun startEntry(ctx: Context, entry: AppEntry): Boolean {

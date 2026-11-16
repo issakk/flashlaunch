@@ -42,6 +42,8 @@ object Matcher {
 
     fun score(entry: AppEntry, q: String): Int {
         if (q.isEmpty()) return NO_MATCH
+        // nothing can match a query longer than the longest haystack
+        if (q.length > entry.maxLength) return NO_MATCH
         var best = NO_MATCH
 
         fun consider(v: Int) {

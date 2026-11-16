@@ -114,6 +114,34 @@ fun SettingsScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                     onCheckedChange = viewModel::setKeyVibration,
                 )
             }
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "每行图标数", style = MaterialTheme.typography.bodyLarge)
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = "${state.gridColumns} 列",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Slider(
+                        value = state.gridColumns.toFloat(),
+                        onValueChange = { viewModel.setGridColumns(it.toInt()) },
+                        valueRange = Prefs.MIN_GRID_COLUMNS.toFloat()..Prefs.MAX_GRID_COLUMNS.toFloat(),
+                        steps = 4,
+                    )
+                    Text(
+                        text = "3~8 列，图标会随列数自动缩放",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
 
             item { SectionTitle("权限") }
             item {
