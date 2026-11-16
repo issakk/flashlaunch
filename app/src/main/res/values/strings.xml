@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">闪启</string>
+    <string name="search_hint">搜索应用 · T9 / 拼音 / 首字母</string>
+    <string name="settings">设置</string>
+    <string name="hide">隐藏</string>
+    <string name="unhide">取消隐藏</string>
+    <string name="app_info">应用信息</string>
+    <string name="freeze">冻结</string>
+    <string name="unfreeze">解冻</string>
+    <string name="open">打开</string>
+</resources>
