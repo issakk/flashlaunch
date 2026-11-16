@@ -37,6 +37,8 @@ data class UiState(
     val loading: Boolean = true,
     val showFrozen: Boolean = true,
     val showHidden: Boolean = false,
+    val panelHeight: Int = 60,
+    val lastLaunchedAt: Long = 0L,
     val privilege: PrivilegeStatus = PrivilegeStatus(),
     val message: String? = null,
 ) {
@@ -56,6 +58,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             showFrozen = prefs.showFrozen,
             showHidden = prefs.showHidden,
             hidden = prefs.hiddenApps(),
+            panelHeight = prefs.panelHeight,
         )
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -179,6 +182,15 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         recompute()
     }
 
+
+    fun setPanelHeight(percent: Int) {
+        prefs.panelHeight = percent
+        _state.update { it.copy(panelHeight = prefs.panelHeight) }
+    }
+
+    fun consumeLaunchSignal() {
+        _state.update { it.copy(lastLaunchedAt = 0L) }
+    }
     fun toggleHidden(entry: AppEntry) {
         toggleHiddenByPackage(entry.packageName)
     }
@@ -212,6 +224,9 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
                 refresh(silent = true)
             }
             val launched = startEntry(ctx, entry)
+            if (launched) {
+                _state.update { it.copy(lastLaunchedAt = System.currentTimeMillis()) }
+            }
             if (!launched) {
                 _state.update { it.copy(message = "无法打开 ${entry.label}") }
             }

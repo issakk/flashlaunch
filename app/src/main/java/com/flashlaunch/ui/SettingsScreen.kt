@@ -18,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.flashlaunch.data.Prefs
 import com.flashlaunch.system.PrivilegeStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,6 +75,36 @@ fun SettingsScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                     checked = state.showHidden,
                     onCheckedChange = viewModel::setShowHidden,
                 )
+            }
+
+            item { SectionTitle("面板") }
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "启动面板高度", style = MaterialTheme.typography.bodyLarge)
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = "${state.panelHeight}%",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Slider(
+                        value = state.panelHeight.toFloat(),
+                        onValueChange = { viewModel.setPanelHeight(it.toInt()) },
+                        valueRange = Prefs.MIN_PANEL_HEIGHT.toFloat()..Prefs.MAX_PANEL_HEIGHT.toFloat(),
+                        steps = 11,
+                    )
+                    Text(
+                        text = "改完立即生效；上方空白区域点一下即可退出",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             item { SectionTitle("权限") }

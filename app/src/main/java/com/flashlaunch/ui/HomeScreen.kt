@@ -14,14 +14,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -30,7 +28,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
@@ -56,10 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,7 +65,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.flashlaunch.data.AppEntry
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -82,7 +75,6 @@ fun HomeScreen(viewModel: AppsViewModel) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var sheetApp by remember { mutableStateOf<AppEntry?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(state.message) {
         val message = state.message
@@ -101,72 +93,70 @@ fun HomeScreen(viewModel: AppsViewModel) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(settingsOpen) {
-        if (!settingsOpen) {
-            delay(150)
-            focusRequester.requestFocus()
-        }
-    }
-
-    if (settingsOpen) {
-        SettingsScreen(viewModel = viewModel, onClose = { settingsOpen = false })
-    } else {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .statusBarsPadding()
-                .imePadding()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SearchField(
-                    value = state.query,
-                    onValueChange = viewModel::setQuery,
-                    focusRequester = focusRequester,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = { settingsOpen = true }) {
-                    Icon(
-                        imageVector = Icons.Filled.Settings,
-                        contentDescription = "设置",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+    ) {
+        if (settingsOpen) {
+            SettingsScreen(viewModel = viewModel, onClose = { settingsOpen = false })
+        } else {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    QueryBar(
+                        query = state.query,
+                        onClear = { viewModel.setQuery("") },
+                        modifier = Modifier.weight(1f),
                     )
-                }
-            }
-
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                when {
-                    state.loading -> Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator()
+                    IconButton(onClick = { settingsOpen = true }) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "设置",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
+                }
 
-                    state.results.isEmpty() -> EmptyState(hasQuery = state.query.isNotBlank())
-
-                    state.query.isBlank() -> {
-                        Column(Modifier.fillMaxSize()) {
-                            AppsHeader(state)
-                            AppGrid(
-                                apps = state.results,
-                                onClick = viewModel::openApp,
-                                onLongClick = { sheetApp = it },
-                            )
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    when {
+                        state.loading -> Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
                         }
-                    }
 
-                    else -> AppList(
-                        apps = state.results,
-                        onClick = viewModel::openApp,
-                        onLongClick = { sheetApp = it },
-                    )
+                        state.results.isEmpty() -> EmptyState(hasQuery = state.query.isNotBlank())
+
+                        state.query.isBlank() -> {
+                            Column(Modifier.fillMaxSize()) {
+                                AppsHeader(state)
+                                AppGrid(
+                                    apps = state.results,
+                                    onClick = viewModel::openApp,
+                                    onLongClick = { sheetApp = it },
+                                )
+                            }
+                        }
+
+                        else -> AppList(
+                            apps = state.results,
+                            onClick = viewModel::openApp,
+                            onLongClick = { sheetApp = it },
+                        )
+                    }
                 }
+
+                NineKeyPad(
+                    onDigit = { digit -> viewModel.setQuery(state.query + digit) },
+                    onBackspace = { viewModel.setQuery(state.query.dropLast(1)) },
+                    onClear = { viewModel.setQuery("") },
+                )
             }
         }
     }
@@ -202,16 +192,16 @@ fun HomeScreen(viewModel: AppsViewModel) {
     }
 }
 
+/** Read-only query display: input comes from the T9 pad, not the IME. */
 @Composable
-private fun SearchField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    focusRequester: FocusRequester,
+private fun QueryBar(
+    query: String,
+    onClear: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier.height(50.dp),
-        shape = RoundedCornerShape(25.dp),
+        modifier = modifier.height(46.dp),
+        shape = RoundedCornerShape(23.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
     ) {
         Row(
@@ -222,42 +212,108 @@ private fun SearchField(
                 imageVector = Icons.Filled.Search,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
             Spacer(Modifier.width(10.dp))
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier
-                    .weight(1f)
-                    .focusRequester(focusRequester),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                decorationBox = { innerTextField ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (value.isEmpty()) {
-                            Text(
-                                text = "搜索应用 · T9 / 拼音 / 首字母",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        innerTextField()
-                    }
+            Text(
+                text = query.ifEmpty { "拼音首字母 / T9 数字，键盘在下方" },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (query.isEmpty()) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
                 },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
-            if (value.isNotEmpty()) {
-                IconButton(onClick = { onValueChange("") }) {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = onClear, modifier = Modifier.size(28.dp)) {
                     Icon(
                         imageVector = Icons.Filled.Close,
                         contentDescription = "清空",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
                     )
                 }
+            }
+        }
+    }
+}
+
+private data class PadKey(val main: String, val sub: String)
+
+private val PAD_KEYS = listOf(
+    PadKey("1", ""), PadKey("2", "abc"), PadKey("3", "def"),
+    PadKey("4", "ghi"), PadKey("5", "jkl"), PadKey("6", "mno"),
+    PadKey("7", "pqrs"), PadKey("8", "tuv"), PadKey("9", "wxyz"),
+    PadKey("清空", ""), PadKey("0", ""), PadKey("⌫", ""),
+)
+
+/** Simple phone-style keypad; every key appends a T9 digit. */
+@Composable
+private fun NineKeyPad(
+    onDigit: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 10.dp),
+    ) {
+        PAD_KEYS.chunked(3).forEachIndexed { index, row ->
+            if (index > 0) Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                row.forEach { key ->
+                    PadButton(
+                        key = key,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            when (key.main) {
+                                "⌫" -> onBackspace()
+                                "清空" -> onClear()
+                                else -> onDigit(key.main)
+                            }
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PadButton(key: PadKey, modifier: Modifier, onClick: () -> Unit) {
+    Surface(
+        modifier = modifier
+            .defaultMinSize(minHeight = 42.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = key.main,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (key.sub.isNotEmpty()) {
+                Text(
+                    text = key.sub,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -268,7 +324,7 @@ private fun AppsHeader(state: UiState) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -301,7 +357,7 @@ private fun EmptyState(hasQuery: Boolean) {
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = if (hasQuery) "换个拼音、首字母或 T9 数字试试" else "试试在设置里打开“显示已冻结的应用”",
+                text = if (hasQuery) "换个 T9 数字或首字母试试" else "试试在设置里打开「显示已冻结的应用」",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
             )
@@ -319,7 +375,7 @@ private fun AppGrid(
     LazyVerticalGrid(
         columns = GridCells.Fixed(5),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         items(items = apps, key = { it.packageName }) { entry ->
@@ -343,11 +399,11 @@ private fun AppGridItem(
                 onClick = { onClick(entry) },
                 onLongClick = { onLongClick(entry) },
             )
-            .padding(vertical = 8.dp, horizontal = 2.dp),
+            .padding(vertical = 6.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box {
-            AppIcon(entry = entry, size = 50.dp)
+            AppIcon(entry = entry, size = 46.dp)
             if (entry.isFrozen) {
                 Box(
                     modifier = Modifier
@@ -358,7 +414,7 @@ private fun AppGridItem(
                 )
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(5.dp))
         Text(
             text = entry.label,
             style = MaterialTheme.typography.labelMedium,
@@ -378,7 +434,7 @@ private fun AppList(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 24.dp),
+        contentPadding = PaddingValues(bottom = 12.dp),
     ) {
         items(items = apps, key = { it.packageName }) { entry ->
             AppRow(entry, onClick, onLongClick)
@@ -400,11 +456,11 @@ private fun AppRow(
                 onClick = { onClick(entry) },
                 onLongClick = { onLongClick(entry) },
             )
-            .padding(horizontal = 18.dp, vertical = 9.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AppIcon(entry = entry, size = 42.dp)
-        Spacer(Modifier.width(14.dp))
+        AppIcon(entry = entry, size = 40.dp)
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 text = entry.label,
@@ -486,7 +542,6 @@ private fun AppActions(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
             .padding(bottom = 16.dp)
     ) {
         Row(
