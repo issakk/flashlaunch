@@ -12,6 +12,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.flashlaunch.data.AppEntry
 import com.flashlaunch.data.AppRepository
+import com.flashlaunch.data.AppSnapshot
 import com.flashlaunch.data.Prefs
 import com.flashlaunch.search.Matcher
 import com.flashlaunch.system.PrivilegeMode
@@ -68,8 +69,15 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     /** In-flight scoring job, cancelled when a newer keystroke arrives. */
     private var searchJob: Job? = null
 
+    /** Cached list from the previous run, so the first frame already has icons. */
+    private val cachedApps: List<AppEntry> =
+        runCatching { AppSnapshot.load(app) }.getOrElse { emptyList() }
+
     private val _state = MutableStateFlow(
         UiState(
+            allApps = cachedApps,
+            results = cachedApps,
+            loading = cachedApps.isEmpty(),
             showFrozen = prefs.showFrozen,
             showHidden = prefs.showHidden,
             hidden = prefs.hiddenApps(),
@@ -80,7 +88,6 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         )
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
-
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             refresh(silent = true)
@@ -104,6 +111,11 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        if (cachedApps.isNotEmpty()) {
+            loaded = cachedApps
+            ensureBase()
+            _state.update { it.copy(results = base) }
+        }
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
             addAction(Intent.ACTION_PACKAGE_REMOVED)
@@ -128,7 +140,8 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         } catch (t: Throwable) {
             // Shizuku not installed: every other Shizuku call is guarded anyway
         }
-        refresh(silent = false)
+        // with a cached list there is nothing to wait for: keep the grid visible
+        refresh(silent = cachedApps.isNotEmpty())
         refreshPrivilege()
     }
 
@@ -175,6 +188,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             if (!sameContent(apps, loaded)) {
                 loaded = apps
                 loadedVersion++
+                withContext(Dispatchers.IO) { AppSnapshot.save(getApplication(), apps) }
             }
             _state.update {
                 it.copy(

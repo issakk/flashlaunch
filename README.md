@@ -46,6 +46,7 @@ Google Maps  -> label=google maps pinyinFull=googlemaps pinyinInitials=gm
 
 - **检索**：搜索只在缓存的「可见 + 已排序」列表上跑；隐藏/冻结过滤只在开关、隐藏名单或应用列表变化时重算一次
 - **打分**：`maxLength` 预筛——查询比应用最长检索串还长时直接跳过；真正的打分在 `Dispatchers.Default` 完成，新按键会取消上一次任务，主线程不阻塞
+- **首帧**：应用列表快照存 `filesDir/apps_cache.v1`，打开面板时同步读回（约 15KB），第一帧就是真实网格，不再先白一下
 - **刷新**：`onResume` 先逐项比对包名 / Activity / 标签 / 冻结状态，完全一致就跳过状态更新，网格不重组
 - **图标**：按屏幕密度解码（52dp 等效，夹在 96~208px），LRU 128 张，快速滚动不重复解码
 
