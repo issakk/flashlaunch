@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
@@ -72,6 +74,13 @@ fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var sheetApp by remember { mutableStateOf<AppEntry?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val gridState = rememberLazyGridState()
+
+    // every new keystroke should start from the best match, not from wherever
+    // the previous result set happened to be scrolled to
+    LaunchedEffect(state.query) {
+        gridState.scrollToItem(0)
+    }
 
     LaunchedEffect(state.message) {
         val message = state.message
@@ -118,6 +127,7 @@ fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                                 AppGrid(
                                     apps = state.results,
                                     columns = state.gridColumns,
+                                    gridState = gridState,
                                     onClick = viewModel::openApp,
                                     onLongClick = { sheetApp = it },
                                 )
@@ -183,11 +193,11 @@ private sealed interface PadKey {
 }
 
 private val PAD_ROWS: List<List<PadKey>> = listOf(
-    listOf(PadKey.Settings, PadKey.OpenFirst, PadKey.Backspace),
-    listOf(PadKey.Digit("1", "-"), PadKey.Digit("2", "abc"), PadKey.Digit("3", "def")),
-    listOf(PadKey.Digit("4", "ghi"), PadKey.Digit("5", "jkl"), PadKey.Digit("6", "mno")),
-    listOf(PadKey.Digit("7", "pqrs"), PadKey.Digit("8", "tuv"), PadKey.Digit("9", "wxyz")),
-    listOf(PadKey.Clear, PadKey.Digit("0"), PadKey.Close),
+    listOf(PadKey.Settings, PadKey.Close, PadKey.Backspace),
+    listOf(PadKey.Digit("1", "-"), PadKey.Digit("2", "ABC"), PadKey.Digit("3", "DEF")),
+    listOf(PadKey.Digit("4", "GHI"), PadKey.Digit("5", "JKL"), PadKey.Digit("6", "MNO")),
+    listOf(PadKey.Digit("7", "PQRS"), PadKey.Digit("8", "TUV"), PadKey.Digit("9", "WXYZ")),
+    listOf(PadKey.Clear, PadKey.Digit("0"), PadKey.OpenFirst),
 )
 
 /** Phone-style T9 keypad with a control row for settings / launch-first / backspace. */
@@ -250,22 +260,22 @@ private fun PadButton(
     val label = when (key) {
         is PadKey.Digit -> key.value
         PadKey.Settings -> "⚙"
-        PadKey.OpenFirst -> "↵"
+        PadKey.OpenFirst -> "➤"
         PadKey.Backspace -> "⌫"
-        PadKey.Clear -> "清空"
-        PadKey.Close -> "✕"
+        PadKey.Clear -> "✕"
+        PadKey.Close -> "⌄"
     }
     val sub = when (key) {
         is PadKey.Digit -> key.letters
         PadKey.Settings -> "设置"
         PadKey.OpenFirst -> "打开"
         PadKey.Backspace -> "退格"
-        PadKey.Clear -> ""
-        PadKey.Close -> "关闭"
+        PadKey.Clear -> "清空"
+        PadKey.Close -> "收起"
     }
     val isAction = key !is PadKey.Digit
 
-    Surface(
+    Box(
         modifier = modifier
             .fillMaxHeight()
             .clip(RoundedCornerShape(12.dp))
@@ -275,33 +285,28 @@ private fun PadButton(
                 }
                 onClick()
             },
-        shape = RoundedCornerShape(12.dp),
-        color = if (isAction) {
-            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-        },
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 5.dp),
+                .padding(vertical = 2.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.titleMedium,
-                color = if (enabled) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                style = MaterialTheme.typography.titleLarge,
+                color = when {
+                    !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    isAction -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurface
                 },
             )
             if (sub.isNotEmpty()) {
                 Text(
                     text = sub,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -377,6 +382,7 @@ private fun EmptyState(query: String) {
 private fun AppGrid(
     apps: List<AppEntry>,
     columns: Int,
+    gridState: LazyGridState,
     onClick: (AppEntry) -> Unit,
     onLongClick: (AppEntry) -> Unit,
 ) {
@@ -387,6 +393,7 @@ private fun AppGrid(
         else -> 34.dp
     }
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Fixed(columns),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 12.dp),
