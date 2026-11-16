@@ -100,7 +100,7 @@ fun SettingsScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                         steps = 11,
                     )
                     Text(
-                        text = "改完立即生效；上方空白区域点一下即可退出",
+                        text = "改完立即生效；面板外的区域仍属于桌面，按返回键退出面板",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
