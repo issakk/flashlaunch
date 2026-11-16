@@ -21,11 +21,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -133,7 +131,8 @@ fun HomeScreen(viewModel: AppsViewModel) {
 
                         state.results.isEmpty() -> EmptyState(hasQuery = state.query.isNotBlank())
 
-                        state.query.isBlank() -> {
+                        // The grid stays a grid while searching; only the rows change.
+                        else -> {
                             Column(Modifier.fillMaxSize()) {
                                 AppsHeader(state)
                                 AppGrid(
@@ -143,13 +142,6 @@ fun HomeScreen(viewModel: AppsViewModel) {
                                 )
                             }
                         }
-
-                        else -> AppList(
-                            apps = state.results,
-                            onClick = viewModel::openApp,
-                            onLongClick = { sheetApp = it },
-                        )
-                    }
                 }
 
                 NineKeyPad(
@@ -426,63 +418,6 @@ private fun AppGridItem(
     }
 }
 
-@Composable
-private fun AppList(
-    apps: List<AppEntry>,
-    onClick: (AppEntry) -> Unit,
-    onLongClick: (AppEntry) -> Unit,
-) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 12.dp),
-    ) {
-        items(items = apps, key = { it.packageName }) { entry ->
-            AppRow(entry, onClick, onLongClick)
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun AppRow(
-    entry: AppEntry,
-    onClick: (AppEntry) -> Unit,
-    onLongClick: (AppEntry) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = { onClick(entry) },
-                onLongClick = { onLongClick(entry) },
-            )
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AppIcon(entry = entry, size = 40.dp)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = entry.label,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = entry.packageName,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (entry.isFrozen) {
-            Spacer(Modifier.width(8.dp))
-            StatusChip("已冻结")
-        }
-    }
-}
 
 @Composable
 fun AppIcon(entry: AppEntry, size: Dp, modifier: Modifier = Modifier) {
@@ -514,20 +449,6 @@ fun AppIcon(entry: AppEntry, size: Dp, modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-private fun StatusChip(text: String) {
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onTertiaryContainer,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-        )
-    }
-}
 
 @Composable
 private fun AppActions(
