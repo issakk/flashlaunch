@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,7 +26,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.flashlaunch.data.Prefs
@@ -35,7 +33,11 @@ import com.flashlaunch.system.PrivilegeStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
+fun SettingsScreen(
+    viewModel: AppsViewModel,
+    onClose: () -> Unit,
+    onOpenHidden: () -> Unit,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     BackHandler(onBack = onClose)
 
@@ -69,11 +71,11 @@ fun SettingsScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                 )
             }
             item {
-                SettingSwitch(
-                    title = "显示已隐藏的应用",
-                    subtitle = "临时显示隐藏项，方便恢复",
-                    checked = state.showHidden,
-                    onCheckedChange = viewModel::setShowHidden,
+                SettingRow(
+                    title = "已隐藏的应用",
+                    subtitle = "共 ${state.hiddenCount} 个，点开可逐个恢复或直接启动",
+                    action = "管理",
+                    onAction = onOpenHidden,
                 )
             }
 
@@ -205,20 +207,6 @@ fun SettingsScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
             }
             item { HintRow("冻结 / 解冻优先走 Shizuku，没有 Shizuku 授权时回退到 Root。") }
 
-            item { SectionTitle("已隐藏的应用（${state.hiddenCount}）") }
-            if (state.hidden.isEmpty()) {
-                item { HintRow("还没有隐藏任何应用。长按应用图标即可隐藏。") }
-            } else {
-                val byPackage = state.allApps.associateBy { it.packageName }
-                items(items = state.hidden.sorted(), key = { it }) { pkg ->
-                    val entry = byPackage[pkg]
-                    HiddenRow(
-                        label = entry?.label ?: pkg,
-                        packageName = pkg,
-                        onRestore = { viewModel.toggleHiddenByPackage(pkg) },
-                    )
-                }
-            }
 
             item { SectionTitle("关于") }
             item {
@@ -323,32 +311,6 @@ private fun SettingRow(
     }
 }
 
-@Composable
-private fun HiddenRow(label: String, packageName: String, onRestore: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = packageName,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        TextButton(onClick = onRestore) { Text("恢复") }
-    }
-}
 
 @Composable
 private fun HintRow(text: String) {

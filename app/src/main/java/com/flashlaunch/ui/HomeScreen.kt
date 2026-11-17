@@ -74,7 +74,7 @@ import kotlinx.coroutines.withContext
 fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var screen by rememberSaveable { mutableStateOf(AppScreen.HOME) }
     var sheetApp by remember { mutableStateOf<AppEntry?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val gridState = rememberLazyGridState()
@@ -107,10 +107,19 @@ fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
         color = MaterialTheme.colorScheme.background,
         shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
     ) {
-        if (settingsOpen) {
-            SettingsScreen(viewModel = viewModel, onClose = { settingsOpen = false })
-        } else {
-            Column(Modifier.fillMaxSize()) {
+        when (screen) {
+            AppScreen.SETTINGS -> SettingsScreen(
+                viewModel = viewModel,
+                onClose = { screen = AppScreen.HOME },
+                onOpenHidden = { screen = AppScreen.HIDDEN },
+            )
+
+            AppScreen.HIDDEN -> HiddenScreen(
+                viewModel = viewModel,
+                onBack = { screen = AppScreen.SETTINGS },
+            )
+
+            AppScreen.HOME -> Column(Modifier.fillMaxSize()) {
 
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     when {
@@ -147,7 +156,7 @@ fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                     onBackspace = { viewModel.setQuery(state.query.dropLast(1)) },
                     onClear = { viewModel.setQuery("") },
                     onOpenFirst = { state.results.firstOrNull()?.let(viewModel::openApp) },
-                    onSettings = { settingsOpen = true },
+                    onSettings = { screen = AppScreen.SETTINGS },
                     onClose = onClose,
                 )
             }
@@ -185,6 +194,8 @@ fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
     }
 }
 
+
+private enum class AppScreen { HOME, SETTINGS, HIDDEN }
 
 private sealed interface PadKey {
     data class Digit(val value: String, val letters: String = "") : PadKey

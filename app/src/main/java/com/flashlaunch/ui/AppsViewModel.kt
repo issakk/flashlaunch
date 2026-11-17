@@ -38,7 +38,6 @@ data class UiState(
     val query: String = "",
     val loading: Boolean = true,
     val showFrozen: Boolean = true,
-    val showHidden: Boolean = false,
     val panelHeight: Int = 60,
     val gridColumns: Int = 5,
     val keypadPercent: Int = 45,
@@ -80,7 +79,6 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             results = cachedApps,
             loading = cachedApps.isEmpty(),
             showFrozen = prefs.showFrozen,
-            showHidden = prefs.showHidden,
             hidden = prefs.hiddenApps(),
             panelHeight = prefs.panelHeight,
             gridColumns = prefs.gridColumns,
@@ -180,8 +178,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             // Nothing moved: skip the state update so the grid is not recomposed.
             if (sameContent(apps, loaded) &&
                 current.hidden == hidden &&
-                current.showFrozen == prefs.showFrozen &&
-                current.showHidden == prefs.showHidden
+                current.showFrozen == prefs.showFrozen
             ) {
                 if (current.loading) _state.update { it.copy(loading = false) }
                 return@launch
@@ -197,7 +194,6 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
                     allApps = apps,
                     loading = false,
                     showFrozen = prefs.showFrozen,
-                    showHidden = prefs.showHidden,
                     hidden = hidden,
                 )
             }
@@ -227,9 +223,11 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         recompute()
     }
 
-    fun setShowHidden(value: Boolean) {
-        prefs.showHidden = value
-        _state.update { it.copy(showHidden = value) }
+    fun clearHidden() {
+        prefs.clearHidden()
+        _state.update {
+            it.copy(hidden = emptySet(), message = "已恢复全部隐藏应用")
+        }
         recompute()
     }
 
@@ -376,7 +374,6 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         val snapshot = _state.value
         val key = buildString {
             append(snapshot.showFrozen).append('|')
-            append(snapshot.showHidden).append('|')
             append(snapshot.hidden.hashCode()).append('|')
             append(loadedVersion).append('|')
             append(snapshot.sortByUsage).append('|')
@@ -387,7 +384,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
 
         val visible = loaded.filter { entry ->
             (snapshot.showFrozen || !entry.isFrozen) &&
-                (snapshot.showHidden || !snapshot.hidden.contains(entry.packageName))
+                !snapshot.hidden.contains(entry.packageName)
         }
         base = if (snapshot.sortByUsage) {
             val counts = prefs.launchCounts()

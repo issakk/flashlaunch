@@ -24,11 +24,6 @@ class Prefs(context: Context) {
             sp.edit().putBoolean(KEY_SHOW_FROZEN, value).apply()
         }
 
-    var showHidden: Boolean
-        get() = sp.getBoolean(KEY_SHOW_HIDDEN, false)
-        set(value) {
-            sp.edit().putBoolean(KEY_SHOW_HIDDEN, value).apply()
-        }
 
     /** Panel height in percent of the screen (35..95). */
     var panelHeight: Int
@@ -102,6 +97,10 @@ class Prefs(context: Context) {
         sp.edit().remove(KEY_USAGE).apply()
     }
 
+    fun clearHidden() {
+        sp.edit().remove(KEY_HIDDEN).apply()
+    }
+
     companion object {
         const val MIN_PANEL_HEIGHT = 35
         const val MAX_PANEL_HEIGHT = 95
@@ -114,7 +113,6 @@ class Prefs(context: Context) {
         const val DEFAULT_KEYPAD_PERCENT = 45
         private const val KEY_HIDDEN = "hidden_apps"
         private const val KEY_SHOW_FROZEN = "show_frozen"
-        private const val KEY_SHOW_HIDDEN = "show_hidden"
         private const val KEY_PANEL_HEIGHT = "panel_height"
         private const val KEY_KEY_VIBRATION = "key_vibration"
         private const val KEY_GRID_COLUMNS = "grid_columns"
