@@ -101,6 +101,40 @@ class Prefs(context: Context) {
         sp.edit().remove(KEY_HIDDEN).apply()
     }
 
+    // ---- groups ----
+
+    /** Named sets of apps; an enabled group hides every member at once. */
+    fun groups(): List<AppGroup> {
+        val raw = sp.getStringSet(KEY_GROUPS, emptySet()) ?: emptySet()
+        return raw.mapNotNull { entry ->
+            val parts = entry.split(GROUP_SEP)
+            if (parts.size < 3) return@mapNotNull null
+            AppGroup(
+                name = parts[0],
+                enabled = parts[1] == "1",
+                packages = parts[2].split(',').filter { it.isNotEmpty() }.toSet(),
+            )
+        }.sortedBy { it.name }
+    }
+
+    fun saveGroups(groups: List<AppGroup>) {
+        val encoded = groups.map { group ->
+            val name = group.name.replace(GROUP_SEP.toString(), "")
+            val flag = if (group.enabled) "1" else "0"
+            "$name$GROUP_SEP$flag$GROUP_SEP${group.packages.joinToString(",")}"
+        }.toSet()
+        sp.edit().putStringSet(KEY_GROUPS, encoded).apply()
+    }
+
+    /** Individually hidden apps plus the members of every enabled group. */
+    fun effectiveHidden(): Set<String> {
+        val out = HashSet(hiddenApps())
+        for (group in groups()) {
+            if (group.enabled) out.addAll(group.packages)
+        }
+        return out
+    }
+
     companion object {
         const val MIN_PANEL_HEIGHT = 35
         const val MAX_PANEL_HEIGHT = 95
@@ -112,6 +146,8 @@ class Prefs(context: Context) {
         const val MAX_KEYPAD_PERCENT = 80
         const val DEFAULT_KEYPAD_PERCENT = 45
         private const val KEY_HIDDEN = "hidden_apps"
+        private const val KEY_GROUPS = "app_groups"
+        private const val GROUP_SEP = '\u0001'
         private const val KEY_SHOW_FROZEN = "show_frozen"
         private const val KEY_PANEL_HEIGHT = "panel_height"
         private const val KEY_KEY_VIBRATION = "key_vibration"

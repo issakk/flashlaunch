@@ -11,6 +11,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.flashlaunch.data.AppEntry
+import com.flashlaunch.data.AppGroup
 import com.flashlaunch.data.AppRepository
 import com.flashlaunch.data.AppSnapshot
 import com.flashlaunch.data.Prefs
@@ -34,7 +35,10 @@ import rikka.shizuku.Shizuku
 data class UiState(
     val allApps: List<AppEntry> = emptyList(),
     val results: List<AppEntry> = emptyList(),
+    /** effective: individually hidden + members of enabled groups */
     val hidden: Set<String> = emptySet(),
+    val individualHidden: Set<String> = emptySet(),
+    val groups: List<AppGroup> = emptyList(),
     val query: String = "",
     val loading: Boolean = true,
     val showFrozen: Boolean = true,
@@ -79,7 +83,9 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             results = cachedApps,
             loading = cachedApps.isEmpty(),
             showFrozen = prefs.showFrozen,
-            hidden = prefs.hiddenApps(),
+            hidden = prefs.effectiveHidden(),
+            individualHidden = prefs.hiddenApps(),
+            groups = prefs.groups(),
             panelHeight = prefs.panelHeight,
             gridColumns = prefs.gridColumns,
             keypadPercent = prefs.keypadPercent,
@@ -172,12 +178,16 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             val apps = withContext(Dispatchers.IO) {
                 runCatching { repository.load() }.getOrElse { emptyList() }
             }
-            val hidden = prefs.hiddenApps()
+            val hidden = prefs.effectiveHidden()
+            val individual = prefs.hiddenApps()
+            val groups = prefs.groups()
             val current = _state.value
 
             // Nothing moved: skip the state update so the grid is not recomposed.
             if (sameContent(apps, loaded) &&
                 current.hidden == hidden &&
+                    current.individualHidden == individual &&
+                    current.groups == groups &&
                 current.showFrozen == prefs.showFrozen
             ) {
                 if (current.loading) _state.update { it.copy(loading = false) }
@@ -195,6 +205,8 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
                     loading = false,
                     showFrozen = prefs.showFrozen,
                     hidden = hidden,
+                    individualHidden = individual,
+                    groups = groups,
                 )
             }
             recompute()
@@ -226,7 +238,11 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     fun clearHidden() {
         prefs.clearHidden()
         _state.update {
-            it.copy(hidden = emptySet(), message = "已恢复全部隐藏应用")
+            it.copy(
+                hidden = emptySet(),
+                individualHidden = emptySet(),
+                message = "已恢复全部隐藏应用",
+            )
         }
         recompute()
     }
@@ -279,9 +295,37 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         val label = loaded.firstOrNull { it.packageName == pkg }?.label ?: pkg
         _state.update {
             it.copy(
-                hidden = prefs.hiddenApps(),
+                hidden = prefs.effectiveHidden(),
+                individualHidden = prefs.hiddenApps(),
                 message = if (nowHidden) "已隐藏 $label" else "已恢复 $label",
             )
+        }
+        recompute()
+    }
+
+    fun setGroupEnabled(name: String, enabled: Boolean) {
+        val groups = prefs.groups().map { if (it.name == name) it.copy(enabled = enabled) else it }
+        prefs.saveGroups(groups)
+        applyGroups(groups, message = if (enabled) "分组「$name」已隐藏" else "分组「$name」已显示")
+    }
+
+    fun saveGroup(original: AppGroup?, group: AppGroup) {
+        val list = prefs.groups().toMutableList()
+        val index = if (original != null) list.indexOfFirst { it.name == original.name } else -1
+        if (index >= 0) list[index] = group else list.add(group)
+        prefs.saveGroups(list)
+        applyGroups(list, message = "分组「${group.name}」已保存")
+    }
+
+    fun deleteGroup(name: String) {
+        val groups = prefs.groups().filterNot { it.name == name }
+        prefs.saveGroups(groups)
+        applyGroups(groups, message = "分组「$name」已删除")
+    }
+
+    private fun applyGroups(groups: List<AppGroup>, message: String) {
+        _state.update {
+            it.copy(groups = groups, hidden = prefs.effectiveHidden(), message = message)
         }
         recompute()
     }
