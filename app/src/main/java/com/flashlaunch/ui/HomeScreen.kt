@@ -52,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
@@ -139,6 +140,7 @@ fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
                                 AppGrid(
                                     apps = state.results,
                                     columns = state.gridColumns,
+                                    iconScale = state.iconScalePercent,
                                     gridState = gridState,
                                     onClick = viewModel::openApp,
                                     onLongClick = { sheetApp = it },
@@ -413,25 +415,34 @@ private fun EmptyState(query: String) {
 private fun AppGrid(
     apps: List<AppEntry>,
     columns: Int,
+    iconScale: Int,
     gridState: LazyGridState,
     onClick: (AppEntry) -> Unit,
     onLongClick: (AppEntry) -> Unit,
 ) {
-    val iconSize = when {
-        columns <= 4 -> 56.dp
-        columns == 5 -> 46.dp
-        columns == 6 -> 40.dp
-        else -> 34.dp
-    }
-    LazyVerticalGrid(
-        state = gridState,
-        columns = GridCells.Fixed(columns),
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        items(items = apps, key = { it.packageName }) { entry ->
-            AppGridItem(entry, iconSize, onClick, onLongClick)
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val cellWidth = maxWidth / columns
+        val baseSize = when {
+            columns <= 4 -> 56.dp
+            columns == 5 -> 46.dp
+            columns == 6 -> 40.dp
+            else -> 34.dp
+        }
+        // never let a scaled icon overflow its cell
+        val iconSize = (baseSize * (iconScale / 100f))
+            .coerceAtMost(cellWidth - 6.dp)
+            .coerceAtLeast(18.dp)
+
+        LazyVerticalGrid(
+            state = gridState,
+            columns = GridCells.Fixed(columns),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            items(items = apps, key = { it.packageName }) { entry ->
+                AppGridItem(entry, iconSize, onClick, onLongClick)
+            }
         }
     }
 }
@@ -491,13 +502,14 @@ private fun AppGridItem(
 @Composable
 fun AppIcon(entry: AppEntry, size: Dp, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var image by remember(entry.packageName, entry.activityName) {
-        mutableStateOf<ImageBitmap?>(IconCache.peek(entry))
+    val px = with(LocalDensity.current) { size.roundToPx() }
+    var image by remember(entry.packageName, entry.activityName, px) {
+        mutableStateOf<ImageBitmap?>(IconCache.peek(entry, px))
     }
 
-    LaunchedEffect(entry.packageName, entry.activityName) {
+    LaunchedEffect(entry.packageName, entry.activityName, px) {
         if (image == null) {
-            image = withContext(Dispatchers.IO) { IconCache.load(context, entry) }
+            image = withContext(Dispatchers.IO) { IconCache.load(context, entry, px) }
         }
     }
 

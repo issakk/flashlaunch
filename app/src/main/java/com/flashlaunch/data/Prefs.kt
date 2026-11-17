@@ -39,6 +39,13 @@ class Prefs(context: Context) {
             sp.edit().putInt(KEY_GRID_COLUMNS, value.coerceIn(MIN_GRID_COLUMNS, MAX_GRID_COLUMNS)).apply()
         }
 
+    /** Grid icon size in percent of the column-based default (70..150). */
+    var iconScalePercent: Int
+        get() = sp.getInt(KEY_ICON_SCALE, DEFAULT_ICON_SCALE).coerceIn(MIN_ICON_SCALE, MAX_ICON_SCALE)
+        set(value) {
+            sp.edit().putInt(KEY_ICON_SCALE, value.coerceIn(MIN_ICON_SCALE, MAX_ICON_SCALE)).apply()
+        }
+
     /** Keypad height as a percentage of the panel height. */
     var keypadPercent: Int
         get() = sp.getInt(KEY_KEYPAD_PERCENT, DEFAULT_KEYPAD_PERCENT).coerceIn(MIN_KEYPAD_PERCENT, MAX_KEYPAD_PERCENT)
@@ -139,6 +146,9 @@ class Prefs(context: Context) {
         const val MIN_PANEL_HEIGHT = 35
         const val MAX_PANEL_HEIGHT = 95
         const val DEFAULT_PANEL_HEIGHT = 60
+        const val MIN_ICON_SCALE = 70
+        const val MAX_ICON_SCALE = 150
+        const val DEFAULT_ICON_SCALE = 100
         const val MIN_GRID_COLUMNS = 3
         const val MAX_GRID_COLUMNS = 8
         const val DEFAULT_GRID_COLUMNS = 5
@@ -152,6 +162,7 @@ class Prefs(context: Context) {
         private const val KEY_PANEL_HEIGHT = "panel_height"
         private const val KEY_KEY_VIBRATION = "key_vibration"
         private const val KEY_GRID_COLUMNS = "grid_columns"
+        private const val KEY_ICON_SCALE = "icon_scale"
         private const val KEY_KEYPAD_PERCENT = "keypad_percent"
         private const val KEY_KEYPAD_MIGRATED = "keypad_percent_migrated"
         private const val KEY_SORT_BY_USAGE = "sort_by_usage"

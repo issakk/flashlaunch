@@ -11,30 +11,27 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
 import com.flashlaunch.data.AppEntry
 
-/** Small LRU of app icons so grid scrolling does not re-decode drawables. */
+/**
+ * Small LRU of app icons. Bitmaps are decoded per size bucket so large icons
+ * stay sharp and small ones do not waste memory.
+ */
 object IconCache {
-
-    /** Decoded icon edge in pixels; sized from the screen density on first use. */
-    @Volatile
-    private var iconPx = 0
 
     private val cache = LruCache<String, ImageBitmap>(128)
 
-    private fun keyOf(entry: AppEntry) = entry.packageName + "/" + entry.activityName
+    /** Rounds the requested pixel size up to a 32px bucket. */
+    private fun bucket(targetPx: Int): Int =
+        ((targetPx.coerceIn(48, 320) + 31) / 32) * 32
 
-    fun peek(entry: AppEntry): ImageBitmap? = cache.get(keyOf(entry))
+    private fun keyOf(entry: AppEntry, px: Int): String =
+        entry.packageName + "/" + entry.activityName + "#" + px
 
-    private fun pxOf(context: Context): Int {
-        var px = iconPx
-        if (px == 0) {
-            px = (52 * context.resources.displayMetrics.density).toInt().coerceIn(96, 208)
-            iconPx = px
-        }
-        return px
-    }
+    fun peek(entry: AppEntry, targetPx: Int): ImageBitmap? =
+        cache.get(keyOf(entry, bucket(targetPx)))
 
-    fun load(context: Context, entry: AppEntry): ImageBitmap? {
-        val key = keyOf(entry)
+    fun load(context: Context, entry: AppEntry, targetPx: Int): ImageBitmap? {
+        val px = bucket(targetPx)
+        val key = keyOf(entry, px)
         cache.get(key)?.let { return it }
 
         val pm = context.packageManager
@@ -49,7 +46,6 @@ object IconCache {
         }
         if (drawable == null) return null
 
-        val px = pxOf(context)
         val bitmap: Bitmap = try {
             val source = (drawable as? BitmapDrawable)?.bitmap
             if (source != null) {

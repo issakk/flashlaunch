@@ -44,6 +44,7 @@ data class UiState(
     val showFrozen: Boolean = true,
     val panelHeight: Int = 60,
     val gridColumns: Int = 5,
+    val iconScalePercent: Int = 100,
     val keypadPercent: Int = 45,
     val sortByUsage: Boolean = true,
     val keyVibration: Boolean = true,
@@ -88,6 +89,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
             groups = prefs.groups(),
             panelHeight = prefs.panelHeight,
             gridColumns = prefs.gridColumns,
+            iconScalePercent = prefs.iconScalePercent,
             keypadPercent = prefs.keypadPercent,
             sortByUsage = prefs.sortByUsage,
             keyVibration = prefs.keyVibration,
@@ -255,6 +257,11 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     fun setGridColumns(columns: Int) {
         prefs.gridColumns = columns
         _state.update { it.copy(gridColumns = prefs.gridColumns) }
+    }
+
+    fun setIconScalePercent(percent: Int) {
+        prefs.iconScalePercent = percent
+        _state.update { it.copy(iconScalePercent = prefs.iconScalePercent) }
     }
 
     fun setKeypadPercent(percent: Int) {

@@ -151,6 +151,34 @@ fun SettingsScreen(
                         .padding(horizontal = 20.dp, vertical = 4.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "图标大小", style = MaterialTheme.typography.bodyLarge)
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = "${state.iconScalePercent}%",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Slider(
+                        value = state.iconScalePercent.toFloat(),
+                        onValueChange = { viewModel.setIconScalePercent(it.toInt()) },
+                        valueRange = Prefs.MIN_ICON_SCALE.toFloat()..Prefs.MAX_ICON_SCALE.toFloat(),
+                        steps = 7,
+                    )
+                    Text(
+                        text = "70%~150%，不会超出每列的格子宽度",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "键盘高度", style = MaterialTheme.typography.bodyLarge)
                         Spacer(Modifier.weight(1f))
                         Text(
