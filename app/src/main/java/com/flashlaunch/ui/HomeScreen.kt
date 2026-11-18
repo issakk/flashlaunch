@@ -9,7 +9,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,7 +21,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,7 +43,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,8 +53,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -66,7 +61,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -208,8 +202,6 @@ fun HomeScreen(viewModel: AppsViewModel, onClose: () -> Unit) {
 
 private enum class AppScreen { HOME, SETTINGS, HIDDEN }
 
-/** Long lists get a scrubber; short ones would just have a useless sliver. */
-private const val FAST_SCROLL_MIN_ITEMS = 40
 
 /** Rows decoded ahead of the visible ones. */
 private const val PREFETCH_ROWS = 3
@@ -449,122 +441,24 @@ private fun AppGrid(
             .coerceAtMost(cellWidth - 6.dp)
             .coerceAtLeast(18.dp)
         val iconPx = with(LocalDensity.current) { iconSize.roundToPx() }
-        val showScroller = apps.size >= FAST_SCROLL_MIN_ITEMS
 
         // warm the next screens once the icons on screen have had their turn
         LaunchedEffect(apps, iconPx) {
             IconCache.prefetch(context, apps.take(columns * PREFETCH_ROWS), iconPx)
         }
 
-        Box(Modifier.fillMaxSize()) {
-            LazyVerticalGrid(
-                state = gridState,
-                columns = GridCells.Fixed(columns),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = 6.dp,
-                    end = if (showScroller) 18.dp else 6.dp,
-                    top = 2.dp,
-                    bottom = 12.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                items(items = apps, key = { it.packageName }) { entry ->
-                    AppGridItem(entry, iconSize, onClick, onLongClick)
-                }
-            }
-            if (showScroller) {
-                FastScroller(
-                    itemCount = apps.size,
-                    state = gridState,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .padding(vertical = 6.dp),
-                )
+        LazyVerticalGrid(
+            state = gridState,
+            columns = GridCells.Fixed(columns),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            items(items = apps, key = { it.packageName }) { entry ->
+                AppGridItem(entry, iconSize, onClick, onLongClick)
             }
         }
     }
-}
-
-/**
- * Thumb-style scrubber for long grids: drag anywhere on the rail to jump.
- * Drawn only when the list is long enough that repeated flinging gets tedious.
- */
-@Composable
-private fun FastScroller(
-    itemCount: Int,
-    state: LazyGridState,
-    modifier: Modifier = Modifier,
-) {
-    val thumbHeight = 44.dp
-    val thumbPx = with(LocalDensity.current) { thumbHeight.roundToPx() }
-    var railPx by remember { mutableStateOf(0) }
-    var dragging by remember { mutableStateOf(false) }
-
-    val progress by remember(state, itemCount) {
-        derivedStateOf {
-            val last = (itemCount - 1).coerceAtLeast(1)
-            (state.firstVisibleItemIndex.toFloat() / last).coerceIn(0f, 1f)
-        }
-    }
-
-    Box(
-        modifier = modifier
-            .width(18.dp)
-            .onSizeChanged { railPx = it.height }
-            .pointerInput(itemCount, railPx, thumbPx) {
-                detectVerticalDragGestures(
-                    onDragStart = { offset ->
-                        dragging = true
-                        scrollToFraction(offset.y, railPx, thumbPx, itemCount, state)
-                    },
-                    onDragEnd = { dragging = false },
-                    onDragCancel = { dragging = false },
-                ) { change, _ ->
-                    change.consume()
-                    scrollToFraction(change.position.y, railPx, thumbPx, itemCount, state)
-                }
-            },
-        contentAlignment = Alignment.TopCenter,
-    ) {
-        Box(
-            modifier = Modifier
-                .width(if (dragging) 5.dp else 3.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(3.dp))
-                .background(
-                    MaterialTheme.colorScheme.onSurface
-                        .copy(alpha = if (dragging) 0.24f else 0.10f)
-                ),
-        )
-        Box(
-            modifier = Modifier
-                .offset {
-                    IntOffset(0, ((railPx - thumbPx) * progress).roundToInt().coerceAtLeast(0))
-                }
-                .width(if (dragging) 8.dp else 5.dp)
-                .height(thumbHeight)
-                .clip(RoundedCornerShape(4.dp))
-                .background(
-                    MaterialTheme.colorScheme.primary
-                        .copy(alpha = if (dragging) 0.9f else 0.5f)
-                ),
-        )
-    }
-}
-
-private fun scrollToFraction(
-    y: Float,
-    railPx: Int,
-    thumbPx: Int,
-    itemCount: Int,
-    state: LazyGridState,
-) {
-    if (railPx <= 0 || itemCount <= 0) return
-    val travel = (railPx - thumbPx).coerceAtLeast(1)
-    val fraction = ((y - thumbPx / 2f) / travel).coerceIn(0f, 1f)
-    state.requestScrollToItem((fraction * (itemCount - 1)).roundToInt().coerceIn(0, itemCount - 1))
 }
 
 @OptIn(ExperimentalFoundationApi::class)
