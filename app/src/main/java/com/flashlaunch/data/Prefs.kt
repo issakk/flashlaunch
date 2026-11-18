@@ -8,6 +8,14 @@ class Prefs(context: Context) {
     private val sp = context.applicationContext
         .getSharedPreferences("flashlaunch", Context.MODE_PRIVATE)
 
+    // Launches are parsed into a map on every search; keep the last parse
+    // around until the stored string actually changes.
+    @Volatile
+    private var usageCache: Map<String, Usage> = emptyMap()
+
+    @Volatile
+    private var usageCacheRaw: String? = null
+
     init {
         // v0.5.2 lowered the keypad default; move untouched installs along once
         if (!sp.getBoolean(KEY_KEYPAD_MIGRATED, false)) {
@@ -76,27 +84,45 @@ class Prefs(context: Context) {
             sp.edit().putBoolean(KEY_SORT_BY_USAGE, value).apply()
         }
 
-    /** package -> launch count, stored as one compact `pkg=count;pkg=count` string. */
-    fun launchCounts(): Map<String, Int> {
+    /**
+     * package -> launch stats, stored as one compact
+     * `pkg=count=lastUsedAt;pkg=count=lastUsedAt` string. Old two-field rows
+     * (`pkg=count`) are still read, with an unknown timestamp.
+     */
+    fun usage(): Map<String, Usage> {
         val raw = sp.getString(KEY_USAGE, "") ?: ""
-        if (raw.isEmpty()) return emptyMap()
-        val out = HashMap<String, Int>()
+        if (raw == usageCacheRaw) return usageCache
+        val out = HashMap<String, Usage>()
         for (part in raw.split(';')) {
             if (part.isEmpty()) continue
-            val split = part.lastIndexOf('=')
-            if (split <= 0) continue
-            val count = part.substring(split + 1).toIntOrNull() ?: continue
-            out[part.substring(0, split)] = count
+            // package names cannot contain '=', so the fields are unambiguous
+            val fields = part.split('=', limit = 3)
+            if (fields.size < 2) continue
+            val count = fields[1].toIntOrNull() ?: continue
+            val lastUsedAt = if (fields.size > 2) fields[2].toLongOrNull() ?: 0L else 0L
+            out[fields[0]] = Usage(count, lastUsedAt)
         }
+        usageCacheRaw = raw
+        usageCache = out
         return out
     }
 
+    /** Restart-frequency weight per package, already decayed by how long ago it was used. */
+    fun usageScores(): Map<String, Double> {
+        val now = System.currentTimeMillis()
+        return usage().mapValues { (_, stats) -> stats.score(now) }
+    }
+
     fun recordLaunch(packageName: String) {
-        val counts = HashMap(launchCounts())
-        counts[packageName] = ((counts[packageName] ?: 0) + 1).coerceAtMost(MAX_LAUNCH_COUNT)
+        val stats = HashMap(usage())
+        val old = stats[packageName] ?: Usage(0)
+        stats[packageName] = Usage(
+            count = (old.count + 1).coerceAtMost(MAX_LAUNCH_COUNT),
+            lastUsedAt = System.currentTimeMillis(),
+        )
         sp.edit().putString(
             KEY_USAGE,
-            counts.entries.joinToString(";") { "${it.key}=${it.value}" },
+            stats.entries.joinToString(";") { "${it.key}=${it.value.count}=${it.value.lastUsedAt}" },
         ).apply()
     }
 

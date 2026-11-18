@@ -14,7 +14,7 @@
 | 隐藏应用 | 长按 → 隐藏；隐藏项从主网格消失，收进独立的「已隐藏的应用」页，可逐个恢复 / 全部恢复，点一下也能直接启动 |
 | 隐藏分组 | 把一批应用放进具名分组，组内一个开关整体隐藏/显示；分组编辑支持筛选、增删成员、改名、删除 |
 | 冻结应用 | 长按 → 冻结 / 解冻（Shizuku 或 Root）；冻结的应用点击后自动解冻再打开 |
-| 排序 | 空查询默认按**启动频率**排（可关，关了按拼音），查询时按匹配分数排 |
+| 排序 | 空查询默认按**最近使用**排（启动次数 × 7 天半衰期，可关，关了按拼音），查询时按匹配分数排 |
 | 固定网格 | 空查询和检索中都是同一个图标网格，不切换成列表 |
 | 排列设置 | 每行 3~8 列；图标大小 70%~150% 单独可调（按格子宽度自动封顶）；键盘高度占面板 35%~80% |
 
@@ -49,9 +49,11 @@ Google Maps  -> label=google maps pinyinFull=googlemaps pinyinInitials=gm
 
 - **检索**：搜索只在缓存的「可见 + 已排序」列表上跑；隐藏/冻结过滤只在开关、隐藏名单或应用列表变化时重算一次
 - **打分**：`maxLength` 预筛——查询比应用最长检索串还长时直接跳过；真正的打分在 `Dispatchers.Default` 完成，新按键会取消上一次任务，主线程不阻塞
-- **首帧**：应用列表快照存 `filesDir/apps_cache.v1`，打开面板时同步读回（约 15KB），第一帧就是真实网格，不再先白一下
-- **刷新**：`onResume` 先逐项比对包名 / Activity / 标签 / 冻结状态，完全一致就跳过状态更新，网格不重组
-- **图标**：按屏幕密度解码（52dp 等效，夹在 96~208px），LRU 128 张，快速滚动不重复解码
+- **首帧**：`AppsViewModel` 挂在 `Application` 上，面板关闭只是 activity 结束，下次打开直接用内存里的列表和排序（不再重扫 PackageManager）；进程被杀后回退到 `filesDir/apps_cache.v1` 快照（约 15KB）
+- **刷新**：`onResume` 与包广播共用一轮串行扫描，广播成串时只补跑一轮；扫描只做一次 `queryIntentActivities`，`ApplicationInfo` 直接取 `ResolveInfo` 里的，不再每个应用一次 IPC。之后逐项比对包名 / Activity / 标签 / 冻结状态，完全一致就跳过状态更新，网格不重组
+- **图标**：按屏幕密度解码（52dp 等效，夹在 96~208px），缓存按字节计（堆的 1/8，4~24MB 封顶）而不是按张数；解码限 2 个线程并预取下一屏，安装/更新后按包名失效
+- **冻结**：点击后立刻在本地翻转状态（一帧生效），`pm` 在后台执行，失败自动回滚
+- **排序**：启动次数存成 `pkg=次数=最近一次时间`，按 `次数 × 0.5^(闲置天数/7)` 打分，常用且新鲜的排前面
 
 ## 冻结 / 解冻
 
@@ -110,7 +112,8 @@ gradle wrapper --gradle-version 8.13   # 仓库里只提交了 wrapper 的 prope
 ```
 app/src/main/java/com/flashlaunch/
 ├── MainActivity.kt
-├── data/        AppEntry / AppRepository / PinyinDict / Prefs
+├── FlashLaunchApp.kt   进程级 AppsViewModel 持有者
+├── data/        AppEntry / AppRepository / PinyinDict / Prefs / Usage
 ├── search/      Matcher（打分与 T9）
 ├── system/      RootShell（su 桥）
 └── ui/          HomeScreen / SettingsScreen / AppsViewModel / IconCache / Theme

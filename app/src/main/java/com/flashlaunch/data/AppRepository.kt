@@ -14,52 +14,58 @@ class AppRepository(context: Context) {
     private val dict by lazy { PinyinDict.get(appContext) }
 
     fun load(): List<AppEntry> {
-        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val seen = HashSet<String>(256)
         val out = ArrayList<AppEntry>(256)
 
-        // MATCH_DISABLED_COMPONENTS surfaces frozen apps on most ROMs; the plain
-        // query is kept as a safety net for ROMs that behave differently.
-        val flagsList = intArrayOf(PackageManager.MATCH_DISABLED_COMPONENTS, 0)
-        for (flags in flagsList) {
-            val resolved = try {
-                pm.queryIntentActivities(launcherIntent, flags)
+        // MATCH_DISABLED_COMPONENTS surfaces frozen apps on most ROMs. The plain
+        // query is only a safety net for ROMs that behave differently, and
+        // running it unconditionally meant scanning every package twice.
+        collect(PackageManager.MATCH_DISABLED_COMPONENTS, seen, out)
+        if (out.isEmpty()) collect(0, seen, out)
+        return out
+    }
+
+    private fun collect(flags: Int, seen: MutableSet<String>, out: MutableList<AppEntry>) {
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val resolved = try {
+            pm.queryIntentActivities(launcherIntent, flags)
+        } catch (t: Throwable) {
+            null
+        } ?: return
+
+        for (ri in resolved) {
+            val ai = ri.activityInfo ?: continue
+            val pkg = ai.packageName ?: continue
+            if (!seen.add(pkg)) continue
+
+            val label = try {
+                ri.loadLabel(pm)?.toString()?.ifBlank { pkg } ?: pkg
+            } catch (t: Throwable) {
+                pkg
+            }
+
+            // ResolveInfo already carries the ApplicationInfo, so the extra
+            // getApplicationInfo() round trip per app is only a fallback.
+            val appInfo: ApplicationInfo? = ai.applicationInfo ?: try {
+                pm.getApplicationInfo(pkg, PackageManager.MATCH_DISABLED_COMPONENTS)
             } catch (t: Throwable) {
                 null
-            } ?: continue
-            for (ri in resolved) {
-                val ai = ri.activityInfo ?: continue
-                val pkg = ai.packageName ?: continue
-                if (!seen.add(pkg)) continue
-
-                val label = try {
-                    ri.loadLabel(pm)?.toString()?.ifBlank { pkg } ?: pkg
-                } catch (t: Throwable) {
-                    pkg
-                }
-
-                val appInfo = try {
-                    pm.getApplicationInfo(pkg, PackageManager.MATCH_DISABLED_COMPONENTS)
-                } catch (t: Throwable) {
-                    null
-                }
-
-                val frozen = !ai.enabled || appInfo?.enabled == false
-                val system = appInfo != null &&
-                    (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-
-                out.add(
-                    AppEntry.create(
-                        packageName = pkg,
-                        activityName = ai.name ?: "",
-                        label = label,
-                        isFrozen = frozen,
-                        isSystem = system,
-                        dict = dict,
-                    )
-                )
             }
+
+            val frozen = !ai.enabled || appInfo?.enabled == false
+            val system = appInfo != null &&
+                (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+
+            out.add(
+                AppEntry.create(
+                    packageName = pkg,
+                    activityName = ai.name ?: "",
+                    label = label,
+                    isFrozen = frozen,
+                    isSystem = system,
+                    dict = dict,
+                )
+            )
         }
-        return out
     }
 }

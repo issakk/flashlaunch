@@ -15,7 +15,7 @@ data class AppEntry(
     val t9Full: String,
     val t9Initials: String,
 ) {
-    val sortKey: String get() = pinyinFull.ifEmpty { searchLabel }
+    val sortKey: String = pinyinFull.ifEmpty { searchLabel }
 
     /** Longest precomputed haystack; lets the matcher reject impossible queries instantly. */
     val maxLength: Int =

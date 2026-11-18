@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -46,6 +47,7 @@ data class UiState(
     val gridColumns: Int = 5,
     val iconScalePercent: Int = 100,
     val keypadPercent: Int = 45,
+    /** Rank the idle grid by launch frequency, decayed by how long ago it was used. */
     val sortByUsage: Boolean = true,
     val keyVibration: Boolean = true,
     val lastLaunchedAt: Long = 0L,
@@ -69,10 +71,17 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Filtered + sorted list used for an empty query (cached). */
     private var base: List<AppEntry> = emptyList()
-    private var baseKey = ""
+    private var baseKey: BaseKey? = null
 
     /** In-flight scoring job, cancelled when a newer keystroke arrives. */
     private var searchJob: Job? = null
+
+    /** Serialised refresh: package broadcasts like to arrive in bursts. */
+    private var refreshJob: Job? = null
+    private var refreshPending = false
+
+    /** When the last full scan finished, so a cold start does not scan twice. */
+    private var lastLoadAt = 0L
 
     /** Cached list from the previous run, so the first frame already has icons. */
     private val cachedApps: List<AppEntry> =
@@ -96,8 +105,11 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         )
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
+
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            // An install/update changes the icon itself, not just the label.
+            intent?.data?.schemeSpecificPart?.takeIf { it.isNotEmpty() }?.let(IconCache::invalidate)
             refresh(silent = true)
         }
     }
@@ -121,8 +133,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     init {
         if (cachedApps.isNotEmpty()) {
             loaded = cachedApps
-            ensureBase()
-            _state.update { it.copy(results = base) }
+            recompute()
         }
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
@@ -169,50 +180,80 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         super.onCleared()
     }
 
+    /** Called every time the panel opens: a launcher should not remember the last query. */
+    fun onPanelOpened() {
+        val hadQuery = _state.value.query.isNotEmpty()
+        // a message queued as the previous panel closed should not pop up later
+        _state.update { it.copy(query = "", message = null) }
+        if (hadQuery) recompute()
+    }
+
     fun onResume() {
-        if (loaded.isNotEmpty()) refresh(silent = true)
+        // A cold start already scanned, so do not scan twice in the same breath.
+        val fresh = SystemClock.elapsedRealtime() - lastLoadAt < FRESH_SCAN_MS
+        if (loaded.isNotEmpty() && !fresh) refresh(silent = true)
         refreshPrivilege()
     }
 
     fun refresh(silent: Boolean = true) {
-        viewModelScope.launch {
-            if (!silent) _state.update { it.copy(loading = true) }
-            val apps = withContext(Dispatchers.IO) {
-                runCatching { repository.load() }.getOrElse { emptyList() }
-            }
-            val hidden = prefs.effectiveHidden()
-            val individual = prefs.hiddenApps()
-            val groups = prefs.groups()
-            val current = _state.value
-
-            // Nothing moved: skip the state update so the grid is not recomposed.
-            if (sameContent(apps, loaded) &&
-                current.hidden == hidden &&
-                    current.individualHidden == individual &&
-                    current.groups == groups &&
-                current.showFrozen == prefs.showFrozen
-            ) {
-                if (current.loading) _state.update { it.copy(loading = false) }
-                return@launch
-            }
-
-            if (!sameContent(apps, loaded)) {
-                loaded = apps
-                loadedVersion++
-                withContext(Dispatchers.IO) { AppSnapshot.save(getApplication(), apps) }
-            }
-            _state.update {
-                it.copy(
-                    allApps = apps,
-                    loading = false,
-                    showFrozen = prefs.showFrozen,
-                    hidden = hidden,
-                    individualHidden = individual,
-                    groups = groups,
-                )
-            }
-            recompute()
+        // Coalesce bursts: one scan runs at a time, a second pass is queued
+        // instead of two PackageManager scans racing each other.
+        if (refreshJob?.isActive == true) {
+            refreshPending = true
+            return
         }
+        refreshJob = viewModelScope.launch {
+            do {
+                refreshPending = false
+                loadAndApply(silent)
+            } while (refreshPending)
+        }
+    }
+
+    private suspend fun loadAndApply(silent: Boolean) {
+        lastLoadAt = SystemClock.elapsedRealtime()
+        if (!silent) _state.update { it.copy(loading = true) }
+        val apps = withContext(Dispatchers.IO) {
+            runCatching { repository.load() }.getOrElse { emptyList() }
+        }
+        // A failed scan must not wipe a grid we already have.
+        if (apps.isEmpty() && loaded.isNotEmpty()) {
+            _state.update { it.copy(loading = false) }
+            return
+        }
+        val hidden = prefs.effectiveHidden()
+        val individual = prefs.hiddenApps()
+        val groups = prefs.groups()
+        val current = _state.value
+        val changed = !sameContent(apps, loaded)
+
+        // Nothing moved: skip the state update so the grid is not recomposed.
+        if (!changed &&
+            current.hidden == hidden &&
+            current.individualHidden == individual &&
+            current.groups == groups &&
+            current.showFrozen == prefs.showFrozen
+        ) {
+            if (current.loading) _state.update { it.copy(loading = false) }
+            return
+        }
+
+        if (changed) {
+            loaded = apps
+            loadedVersion++
+            withContext(Dispatchers.IO) { AppSnapshot.save(getApplication(), apps) }
+        }
+        _state.update {
+            it.copy(
+                allApps = apps,
+                loading = false,
+                showFrozen = prefs.showFrozen,
+                hidden = hidden,
+                individualHidden = individual,
+                groups = groups,
+            )
+        }
+        recompute()
     }
 
     fun refreshPrivilege(force: Boolean = false) {
@@ -241,7 +282,7 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         prefs.clearHidden()
         _state.update {
             it.copy(
-                hidden = emptySet(),
+                hidden = prefs.effectiveHidden(),
                 individualHidden = emptySet(),
                 message = "已恢复全部隐藏应用",
             )
@@ -249,24 +290,41 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         recompute()
     }
 
-    fun setPanelHeight(percent: Int) {
-        prefs.panelHeight = percent
-        _state.update { it.copy(panelHeight = prefs.panelHeight) }
+    // ---- display settings ----
+    // Sliders call these with persist = false while dragging, so a drag does not
+    // write SharedPreferences on every frame; one write lands on release.
+
+    fun setPanelHeight(percent: Int, persist: Boolean = true) {
+        val value = percent.coerceIn(Prefs.MIN_PANEL_HEIGHT, Prefs.MAX_PANEL_HEIGHT)
+        if (persist) prefs.panelHeight = value
+        _state.update { it.copy(panelHeight = value) }
     }
 
-    fun setGridColumns(columns: Int) {
-        prefs.gridColumns = columns
-        _state.update { it.copy(gridColumns = prefs.gridColumns) }
+    fun setGridColumns(columns: Int, persist: Boolean = true) {
+        val value = columns.coerceIn(Prefs.MIN_GRID_COLUMNS, Prefs.MAX_GRID_COLUMNS)
+        if (persist) prefs.gridColumns = value
+        _state.update { it.copy(gridColumns = value) }
     }
 
-    fun setIconScalePercent(percent: Int) {
-        prefs.iconScalePercent = percent
-        _state.update { it.copy(iconScalePercent = prefs.iconScalePercent) }
+    fun setIconScalePercent(percent: Int, persist: Boolean = true) {
+        val value = percent.coerceIn(Prefs.MIN_ICON_SCALE, Prefs.MAX_ICON_SCALE)
+        if (persist) prefs.iconScalePercent = value
+        _state.update { it.copy(iconScalePercent = value) }
     }
 
-    fun setKeypadPercent(percent: Int) {
-        prefs.keypadPercent = percent
-        _state.update { it.copy(keypadPercent = prefs.keypadPercent) }
+    fun setKeypadPercent(percent: Int, persist: Boolean = true) {
+        val value = percent.coerceIn(Prefs.MIN_KEYPAD_PERCENT, Prefs.MAX_KEYPAD_PERCENT)
+        if (persist) prefs.keypadPercent = value
+        _state.update { it.copy(keypadPercent = value) }
+    }
+
+    /** Called when a slider drag ends: persists whatever was previewed. */
+    fun persistDisplaySettings() {
+        val snapshot = _state.value
+        prefs.panelHeight = snapshot.panelHeight
+        prefs.gridColumns = snapshot.gridColumns
+        prefs.iconScalePercent = snapshot.iconScalePercent
+        prefs.keypadPercent = snapshot.keypadPercent
     }
 
     fun setSortByUsage(value: Boolean) {
@@ -348,14 +406,16 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     return@launch
                 }
+                setFrozenLocally(entry.packageName, frozen = false)
+                // give PackageManager a beat to publish the enabled component
                 delay(250)
-                refresh(silent = true)
             }
             val launched = startEntry(ctx, entry)
             if (launched) {
                 // usage stat drives the default ordering next time the panel opens
                 prefs.recordLaunch(entry.packageName)
                 usageVersion++
+                recompute()
                 _state.update { it.copy(lastLaunchedAt = System.currentTimeMillis()) }
             } else {
                 _state.update { it.copy(message = "无法打开 ${entry.label}") }
@@ -364,25 +424,50 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setFrozen(entry: AppEntry, frozen: Boolean) {
+        if (entry.isFrozen == frozen) return
+        // Optimistic: flip the grid immediately, run `pm` afterwards. A package
+        // broadcast (or the delayed refresh below) reconciles with reality.
+        setFrozenLocally(entry.packageName, frozen)
         viewModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
-                if (frozen) Privileged.freeze(entry.packageName) else Privileged.unfreeze(entry.packageName)
+                if (frozen) {
+                    Privileged.freeze(entry.packageName)
+                } else {
+                    Privileged.unfreeze(entry.packageName)
+                }
+            }
+            if (!ok) {
+                setFrozenLocally(entry.packageName, !frozen)
+                _state.update {
+                    it.copy(
+                        message = if (frozen) {
+                            "冻结 ${entry.label} 需要 Root 或 Shizuku 授权"
+                        } else {
+                            "解冻 ${entry.label} 需要 Root 或 Shizuku 授权"
+                        }
+                    )
+                }
+                return@launch
             }
             _state.update {
-                it.copy(
-                    message = when {
-                        !ok && frozen -> "冻结 ${entry.label} 需要 Root 或 Shizuku 授权"
-                        !ok -> "解冻 ${entry.label} 需要 Root 或 Shizuku 授权"
-                        frozen -> "已冻结 ${entry.label}"
-                        else -> "已解冻 ${entry.label}"
-                    }
-                )
+                it.copy(message = if (frozen) "已冻结 ${entry.label}" else "已解冻 ${entry.label}")
             }
-            if (ok) {
-                delay(300)
-                refresh(silent = true)
-            }
+            delay(400)
+            refresh(silent = true)
         }
+    }
+
+    /** Flips one entry in place so freeze/unfreeze shows up without a rescan. */
+    private fun setFrozenLocally(packageName: String, frozen: Boolean) {
+        if (loaded.none { it.packageName == packageName }) return
+        val updated = loaded.map {
+            if (it.packageName == packageName) it.copy(isFrozen = frozen) else it
+        }
+        loaded = updated
+        loadedVersion++
+        _state.update { it.copy(allApps = updated) }
+        recompute()
+        viewModelScope.launch(Dispatchers.IO) { AppSnapshot.save(getApplication(), updated) }
     }
 
     /** Asks Shizuku for its permission (shows the Shizuku grant dialog). */
@@ -421,15 +506,14 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Rebuilds the cached filtered/sorted list only when its inputs changed. */
-    private fun ensureBase() {
-        val snapshot = _state.value
-        val key = buildString {
-            append(snapshot.showFrozen).append('|')
-            append(snapshot.hidden.hashCode()).append('|')
-            append(loadedVersion).append('|')
-            append(snapshot.sortByUsage).append('|')
-            append(usageVersion)
-        }
+    private fun ensureBase(snapshot: UiState, scores: Map<String, Double>) {
+        val key = BaseKey(
+            showFrozen = snapshot.showFrozen,
+            hidden = snapshot.hidden,
+            loadedVersion = loadedVersion,
+            sortByUsage = snapshot.sortByUsage,
+            usageVersion = usageVersion,
+        )
         if (key == baseKey) return
         baseKey = key
 
@@ -438,9 +522,8 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
                 !snapshot.hidden.contains(entry.packageName)
         }
         base = if (snapshot.sortByUsage) {
-            val counts = prefs.launchCounts()
             visible.sortedWith(
-                compareByDescending<AppEntry> { counts[it.packageName] ?: 0 }
+                compareByDescending<AppEntry> { scores[it.packageName] ?: 0.0 }
                     .thenBy { it.sortKey }
                     .thenBy { it.label }
             )
@@ -450,9 +533,10 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun recompute() {
-        ensureBase()
         val snapshot = _state.value
         val query = Matcher.normalize(snapshot.query)
+        val scores = if (snapshot.sortByUsage) prefs.usageScores() else emptyMap()
+        ensureBase(snapshot, scores)
 
         searchJob?.cancel()
         if (query.isEmpty()) {
@@ -461,10 +545,9 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val source = base
-        val counts = if (snapshot.sortByUsage) prefs.launchCounts() else emptyMap()
         searchJob = viewModelScope.launch {
             // scoring runs off the main thread; a newer keystroke cancels it
-            val found = withContext(Dispatchers.Default) { search(source, query, counts) }
+            val found = withContext(Dispatchers.Default) { search(source, query, scores) }
             _state.update { state ->
                 if (Matcher.normalize(state.query) == query) state.copy(results = found) else state
             }
@@ -474,14 +557,14 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
     private fun search(
         source: List<AppEntry>,
         query: String,
-        counts: Map<String, Int>,
+        scores: Map<String, Double>,
     ): List<AppEntry> =
         source.asSequence()
             .map { it to Matcher.score(it, query) }
             .filter { it.second > 0 }
             .sortedWith(
                 compareByDescending<Pair<AppEntry, Int>> { it.second }
-                    .thenByDescending { counts[it.first.packageName] ?: 0 }
+                    .thenByDescending { scores[it.first.packageName] ?: 0.0 }
                     .thenBy { it.first.label }
             )
             .map { it.first }
@@ -532,7 +615,17 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Everything the idle grid's sort order depends on. */
+    private data class BaseKey(
+        val showFrozen: Boolean,
+        val hidden: Set<String>,
+        val loadedVersion: Int,
+        val sortByUsage: Boolean,
+        val usageVersion: Int,
+    )
+
     private companion object {
         const val MAX_RESULTS = 200
+        const val FRESH_SCAN_MS = 800L
     }
 }

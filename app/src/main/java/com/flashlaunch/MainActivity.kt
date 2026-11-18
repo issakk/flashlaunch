@@ -9,9 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.flashlaunch.data.Prefs
-import com.flashlaunch.ui.AppsViewModel
 import com.flashlaunch.ui.FlashLaunchTheme
 import com.flashlaunch.ui.HomeScreen
 
@@ -26,9 +24,13 @@ class MainActivity : ComponentActivity() {
         window.setDimAmount(0f)
         applyPanelHeight(Prefs(this).panelHeight)
 
+        // Process-scoped: this activity finishes after every launch, and the
+        // next open paints the list that is already in memory.
+        val viewModel = (application as FlashLaunchApp).appsViewModel
+        viewModel.onPanelOpened()
+
         setContent {
             FlashLaunchTheme {
-                val viewModel: AppsViewModel = viewModel()
                 val state by viewModel.state.collectAsStateWithLifecycle()
 
                 LaunchedEffect(state.panelHeight) {

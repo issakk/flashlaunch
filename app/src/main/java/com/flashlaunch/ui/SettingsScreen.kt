@@ -97,7 +97,8 @@ fun SettingsScreen(
                     }
                     Slider(
                         value = state.panelHeight.toFloat(),
-                        onValueChange = { viewModel.setPanelHeight(it.toInt()) },
+                        onValueChange = { viewModel.setPanelHeight(it.toInt(), persist = false) },
+                        onValueChangeFinished = viewModel::persistDisplaySettings,
                         valueRange = Prefs.MIN_PANEL_HEIGHT.toFloat()..Prefs.MAX_PANEL_HEIGHT.toFloat(),
                         steps = 11,
                     )
@@ -133,7 +134,8 @@ fun SettingsScreen(
                     }
                     Slider(
                         value = state.gridColumns.toFloat(),
-                        onValueChange = { viewModel.setGridColumns(it.toInt()) },
+                        onValueChange = { viewModel.setGridColumns(it.toInt(), persist = false) },
+                        onValueChangeFinished = viewModel::persistDisplaySettings,
                         valueRange = Prefs.MIN_GRID_COLUMNS.toFloat()..Prefs.MAX_GRID_COLUMNS.toFloat(),
                         steps = 4,
                     )
@@ -161,7 +163,8 @@ fun SettingsScreen(
                     }
                     Slider(
                         value = state.iconScalePercent.toFloat(),
-                        onValueChange = { viewModel.setIconScalePercent(it.toInt()) },
+                        onValueChange = { viewModel.setIconScalePercent(it.toInt(), persist = false) },
+                        onValueChangeFinished = viewModel::persistDisplaySettings,
                         valueRange = Prefs.MIN_ICON_SCALE.toFloat()..Prefs.MAX_ICON_SCALE.toFloat(),
                         steps = 7,
                     )
@@ -189,7 +192,8 @@ fun SettingsScreen(
                     }
                     Slider(
                         value = state.keypadPercent.toFloat(),
-                        onValueChange = { viewModel.setKeypadPercent(it.toInt()) },
+                        onValueChange = { viewModel.setKeypadPercent(it.toInt(), persist = false) },
+                        onValueChangeFinished = viewModel::persistDisplaySettings,
                         valueRange = Prefs.MIN_KEYPAD_PERCENT.toFloat()..Prefs.MAX_KEYPAD_PERCENT.toFloat(),
                         steps = 8,
                     )
@@ -202,8 +206,8 @@ fun SettingsScreen(
             }
             item {
                 SettingSwitch(
-                    title = "按使用频率排序",
-                    subtitle = "启动次数多的排前面；搜索结果同分时也会优先",
+                    title = "按使用情况排序",
+                    subtitle = "常用且最近用过的排前面（7 天半衰期）；搜索结果同分时也会优先",
                     checked = state.sortByUsage,
                     onCheckedChange = viewModel::setSortByUsage,
                 )
@@ -211,7 +215,7 @@ fun SettingsScreen(
             item {
                 SettingRow(
                     title = "使用记录",
-                    subtitle = "只记启动次数，存在本机",
+                    subtitle = "只记启动次数和最近一次使用时间，存在本机",
                     action = "清空",
                     onAction = viewModel::clearUsage,
                 )
